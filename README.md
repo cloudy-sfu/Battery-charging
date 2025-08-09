@@ -1,4 +1,4 @@
-# Battery CD
+# Battery charging
  Battery charging and discharging planning
 
 ## Model definition
