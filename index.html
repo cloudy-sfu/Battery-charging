@@ -14,7 +14,6 @@
             crossorigin="anonymous">
     </script>
     <script src="ilp_battery.js"></script>
-    <script src="csv_parser.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
     <script src="visualization.js"></script>  <!-- always after echarts -->
     <style>
@@ -92,15 +91,25 @@
             <div class="card">
                 <div class="card-header">Supply and demand</div>
                 <div class="card-body">
-                    <div id="supply-demand-table">
-                        <p>Hourly supply and demand electricity load table:</p>
-                        <label>
-                            <input class="form-control" type="file" name="supply-demand">
-                        </label>
+                    <div class="mb-3">
+                        <label class="form-label">Demand load</label>
+                        <textarea id="demand-textarea" class="form-control" rows="4"></textarea>
                     </div>
-                    <div style="overflow-x: auto;" class="my-4">
-                        <p>Example table:</p>
-                        <img src="assets/supply_demand_tb _example.png" alt="Supply deman table's example" style="max-width: 100%;">
+                    <div class="mb-2">
+                        <span>Supply loads</span>
+                        <button class="btn btn-sm" style="color: green; border: none; padding-bottom: 0.5rem;" onclick="add_supply()">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
+                                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                                <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="supplies"></div>
+                    <div class="fst-italic">
+                        Enter hourly values, each value separated by any non-numeric character. (commas, tabs, newlines, spaces, etc.)<br>
+                        Net demand load (used in the model) is the demand load minus the sum of load of all supply sources.<br>
+                        The unit of all load series must be the same and align with that of energy capacity of batteries.<br>
+                        Sampling frequency must be 1 hour, ordered from earliest to latest.
                     </div>
                 </div>
             </div>
@@ -115,7 +124,7 @@
                         <label>Timeout (s)
                             <input class="form-control" type="number" min="0" step="0.1" name="timeout">
                         </label>
-                        <p class="fst-italic">Optional, leave empty to not limit solving time.</p>
+                        <p class="fst-italic">Optional, leave empty if don't limit solving time.</p>
                     </div>
                 </div>
                 <div class="card-footer">
@@ -126,10 +135,12 @@
     </div>
     <div class="row alert">
         <div class="col-sm-12">
-            <hr>
-            <p>Error message:</p>
-            <p id="errors" style="color: red;"></p>
-            <hr>
+            <div class="card">
+                <div class="card-header">Error messages</div>
+                <div class="card-body">
+                    <p id="errors" style="color: red;"></p>
+                </div>
+            </div>
         </div>
     </div>
     <div class="row alert">
@@ -272,14 +283,47 @@
             JSON.stringify(result).replace(/,/g, ', ').replace(/:/g, ': ');
         hide_loading();
     }
+        function parse_series(text) {
+        // Split by any non-numeric characters (excluding dot, minus, plus for number parsing)
+        // Extract all numbers robustly
+        const matches = text.match(/-?\d+\.?\d*(?:[eE][+-]?\d+)?/g);
+        if (!matches) return [];
+        return matches.map(Number);
+    }
+    function parse_supply_demand() {
+        const demand_text = document.getElementById('demand-textarea').value;
+        const demand_values = parse_series(demand_text);
+        if (demand_values.length === 0) {
+            error_box.innerText = "Please enter demand values.";
+            return [];
+        }
+        const supply_textareas = document.querySelectorAll('#supplies textarea');
+        const supply_columns = [];
+        for (const ta of supply_textareas) {
+            const vals = parse_series(ta.value);
+            if (vals.length > 0) supply_columns.push(vals);
+        }
+        // Assert all supply series have the same length as demand
+        for (const col of supply_columns) {
+            if (col.length !== demand_values.length) {
+                error_box.innerText = `All supply series must have the same length as demand (${demand_values.length}), but got ${col.length}.`;
+                return [];
+            }
+        }
+        // Compute net demand = demand - sum(supplies)
+        demand = demand_values.map((d, j) =>
+            supply_columns.reduce((net, col) => net - col[j], d)
+        );
+        return demand;
+    }
     function start_job() {
         error_box.innerText = '';
         // get demand curve
+        const demand = parse_supply_demand();
         if ((!demand) || (demand.length === 0)) {
             error_box.innerText = "Please choose a supply and demand table.";
             return;
         }
-        console.log(demand);
         // get batteries' attributes
         const batteries = document.getElementById('batteries').children;
         const n_battery = batteries.length;
@@ -333,26 +377,24 @@
         show_loading();
         worker.postMessage(model);
     }
-    function handle_file_selected(event) {
-        if (event.target.files.length > 0) {
-            const reader = new FileReader();
-            reader.onload = (event_1) => {
-                const parsed_csv = parse_csv(event_1.target.result);
-                const supply_demand_name = parsed_csv['columnNames'];
-                const n_supply_demand = supply_demand_name.length;
-                const supply_demand = parsed_csv['dataMatrix'];
-                demand = supply_demand.map((row) => {
-                    let d = row[0];
-                    for (let i = 1; i < n_supply_demand; i++) {
-                        d -= row[i];
-                    }
-                    return d;
-                });
-            };
-            reader.readAsText(event.target.files[0]);
-        }
+    let supply_counter = 0;
+    function add_supply() {
+        supply_counter++;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mb-2 d-flex align-items-start gap-2';
+        const ta = document.createElement('textarea');
+        ta.className = 'form-control';
+        ta.rows = 4;
+        const del_btn = document.createElement('button');
+        del_btn.className = 'btn btn-sm';
+        del_btn.style.cssText = 'color: darkred; border: none;';
+        del_btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash3" viewBox="0 0 16 16">' +
+            '<path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/>' +
+            '</svg>';
+        del_btn.onclick = function() { wrapper.remove(); };
+        wrapper.appendChild(ta);
+        wrapper.appendChild(del_btn);
+        document.getElementById('supplies').appendChild(wrapper);
     }
-    let supply_demand_fn = document.querySelector("#supply-demand-table input[name='supply-demand']");
-    supply_demand_fn.addEventListener('change', handle_file_selected, false);
 </script>
 </html>
