@@ -3,7 +3,7 @@
 
 ## Model definition
 
-![model definition flowchart](assets/model_definition.png)
+![model definition flowchart](./assets/model_definition.png)
 
 ### Constants
 
