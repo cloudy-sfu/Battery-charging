@@ -37,3 +37,4 @@ pluto.ps1
 get_data/*.db
 get_data/*.db-journal
 get_data/.idea
+get_data/datasets/

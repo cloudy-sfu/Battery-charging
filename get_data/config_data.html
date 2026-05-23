@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Battery Dataset Builder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+      rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+  .battery-row{display:flex;flex-wrap:nowrap;gap:.5rem;align-items:end;
+               margin-bottom:.5rem}
+  .battery-row label{font-size:.8rem;margin-bottom:0;flex:1 1 0;min-width:10ch}
+  .battery-row input{font-size:.9rem}
+  .battery-row .row-actions{display:flex;flex:0 0 auto;white-space:nowrap}
+  details.column-help > summary{list-style:none;cursor:pointer;font-weight:bold}
+  details.column-help > summary::-webkit-details-marker{display:none}
+  details.column-help > summary::before{content:"▼";display:inline-block;
+               margin-right:.4rem;transition:transform .15s}
+  details.column-help[open] > summary::before{transform:rotate(-90deg)}
+</style>
+</head>
+<body class="container-sm py-3">
+
+<h3 id="page-title">Battery Dataset Builder</h3>
+
+<div class="card mb-3">
+  <div class="card-header">Batteries</div>
+  <div class="card-body">
+    <div id="batteries"></div>
+
+        <details class="column-help mb-2">
+      <summary>Column descriptions</summary>
+      <table class="table table-sm table-bordered mt-2">
+        <thead><tr><th>Variable</th><th>Data type (validation)</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td>Name</td><td>text, non-empty, unique</td>
+              <td>Project name; used as the primary key of the database row.</td></tr>
+          <tr><td>Energy capacity</td><td>number (MWh), &gt; 0</td>
+              <td>Total energy capacity of the battery. The unit must align
+                  with the unit used by the load time series.</td></tr>
+          <tr><td>Initial level</td><td>number, 0&ndash;1</td>
+              <td>Initial state of charge as a fraction of energy capacity.</td></tr>
+          <tr><td>Charging duration</td><td>number (h), &gt; 0</td>
+              <td>Time required to fully charge.
+                  If the maximum input power is known:
+                  <code>charging duration = energy capacity / maximum input power</code>.</td></tr>
+          <tr><td>Discharging duration</td><td>number (h), &gt; 0</td>
+              <td>Time required to fully discharge.
+                  If the maximum output power is known:
+                  <code>discharging duration = energy capacity / maximum output power</code>.</td></tr>
+          <tr><td>Charging efficiency</td><td>number, 0&ndash;1</td>
+              <td>Round-trip charging efficiency.</td></tr>
+        </tbody>
+      </table>
+    </details>
+        <div class="mt-2">
+      <button class="btn btn-primary" onclick="saveBatteries()">Save batteries</button>
+    </div>
+    <div id="batt-msg" class="mt-2"></div>
+  </div>
+</div>
+
+<template id="battery-template">
+  <div class="battery-row" style="overflow-x:auto;">
+    <label>Name
+      <input type="text" class="form-control form-text" name="name">
+    </label>
+    <label>Energy capacity (MWh)
+      <input type="number" class="form-control form-text" name="capacity" min="0">
+    </label>
+    <label>Initial level (0~1)
+      <input type="number" class="form-control form-text" name="level"
+             max="1" min="0" step="0.01" style="min-width:20ch;">
+    </label>
+    <label>Charging duration (h)
+      <input type="number" class="form-control form-text" name="c_duration" min="0">
+    </label>
+    <label>Discharging duration (h)
+      <input type="number" class="form-control form-text" name="d_duration" min="0">
+    </label>
+    <label style="min-width:25ch;">Charging efficiency (0~1)
+      <input type="number" class="form-control form-text" name="efficiency"
+             max="1" min="0" step="0.01">
+    </label>
+    <span class="row-actions">
+      <button class="btn" style="color:green;border:none;padding-bottom:1rem;"
+              type="button" onclick="addBattery()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-circle" viewBox="0 0 16 16">
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+          <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+        </svg>
+      </button>
+      <button class="btn" style="color:darkred;border:none;padding-bottom:1rem;"
+              type="button" onclick="deleteBattery(this)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash3" viewBox="0 0 16 16">
+          <path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47M8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5"/>
+        </svg>
+      </button>
+    </span>
+  </div>
+</template>
+
+<div class="card mb-3">
+  <div class="card-header">
+    Supply and demand <span id="region-label" class="text-muted"></span>
+  </div>
+  <div class="card-body">
+    <p class="fst-italic" id="series-help"> </p>
+    <div class="d-flex gap-4">
+      <label>Start time
+        <input id="start_time" type="datetime-local" step="1800" class="form-control"></label>
+      <label>End time
+        <input id="end_time" type="datetime-local" step="1800" class="form-control"></label>
+      <div class="d-flex flex-column justify-content-end"><button class="btn btn-primary" onclick="fetchSeries()">Fetch</button></div>
+    </div>
+    <div id="series-msg"></div>
+    <div id="plot" style="height:420px"></div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">Export dataset</div>
+  <div class="card-body">
+        <p class="fst-italic">
+      Writes datasets into a single JLD2 file. The currently saved battery list and the most
+      recently fetched time range are used.
+        </p>
+    <div class="d-flex gap-4">
+        <label class="w-100">Output directory
+          <div class="input-group">
+            <input id="dataset_dir" type="text" class="form-control" placeholder="/path/to/datasets">
+            <button class="btn btn-outline-secondary" type="button" onclick="openFolderPicker('dataset_dir')">Browse</button>
+          </div>
+        </label>
+        <label class="w-100">File name
+          <div class="input-group">
+            <input id="dataset_name" type="text" class="form-control">
+            <span class="input-group-text">.jld2</span>
+          </div>
+        </label>
+        <div class="d-flex flex-column justify-content-end">
+          <button class="btn btn-primary" onclick="exportDataset()">Export</button>
+        </div>
+    </div>
+    <div id="export-msg" class="mt-2"></div>
+  </div>
+</div>
+
+<!-- Folder picker modal -->
+<div class="modal" id="folderModal" tabindex="-1" style="display:none;background:rgba(0,0,0,.4)">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Select folder</h5>
+        <button type="button" class="btn-close" onclick="closeFolderPicker()"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-2">
+          <button class="btn btn-outline-secondary" type="button" onclick="folderUp()" id="folderUpBtn">Parent</button>
+          <input id="folderPathDisplay" class="form-control" readonly>
+        </div>
+        <div class="input-group mb-2">
+          <input id="folderCreateName" class="form-control" placeholder="New folder name">
+          <button class="btn btn-outline-secondary" type="button" onclick="createFolderFromPicker()">New folder</button>
+        </div>
+        <div id="folderPickerError" class="text-danger small mb-2" style="display:none"></div>
+        <div id="folderList" class="list-group" style="max-height:50vh;overflow-y:auto"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeFolderPicker()">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmFolder()">Select</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let lastRange = null;
+let supplyKeys = [];   // names of supply columns returned by /series
+let demandKey  = null; // name of demand column returned by /series
+let timeKey    = null; // name of time column returned by /series
+
+function el(tag, attrs={}) {
+  const e = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === 'value') e.value = attrs[k];
+    else e.setAttribute(k, attrs[k]);
+  }
+  return e;
+}
+
+function addBattery(b) {
+  const tpl = document.getElementById('battery-template');
+  const row = tpl.content.firstElementChild.cloneNode(true);
+  if (b && typeof b === 'object') {
+    for (const inp of row.querySelectorAll('input')) {
+      if (b[inp.name] !== undefined && b[inp.name] !== null) inp.value = b[inp.name];
+    }
+  }
+  document.getElementById('batteries').appendChild(row);
+}
+
+function deleteBattery(self) {
+  const container = document.getElementById('batteries');
+  self.closest('.battery-row').remove();
+  if (container.children.length < 1) addBattery();
+}
+
+function collectBatteries() {
+  const out = [];
+  for (const row of document.querySelectorAll('#batteries .battery-row')) {
+    const obj = {};
+    for (const inp of row.querySelectorAll('input')) obj[inp.name] = inp.value;
+    out.push(obj);
+  }
+  return out;
+}
+
+async function saveBatteries() {
+  const msg = document.getElementById('batt-msg');
+  msg.textContent = 'Saving...';
+  try {
+    const r = await fetch('/batteries', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({batteries: collectBatteries()})});
+    const j = await r.json();
+    msg.innerHTML = j.ok
+      ? '<span class="text-success">Saved ' + j.count + ' batteries.</span>'
+      : '<span class="text-danger">' + j.error + '</span>';
+  } catch (e) {
+    msg.innerHTML = '<span class="text-danger">' + e + '</span>';
+  }
+}
+
+async function fetchSeries() {
+  const msg = document.getElementById('series-msg');
+  const start_time = document.getElementById('start_time').value;
+  const end_time   = document.getElementById('end_time').value;
+  msg.textContent = 'Fetching...';
+  try {
+    const r = await fetch('/series', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({start_time, end_time})});
+    const j = await r.json();
+    if (!j.ok) { msg.innerHTML = '<span class="text-danger">'+j.error+'</span>'; return; }
+    if (Array.isArray(j.supply_keys)) supplyKeys = j.supply_keys;
+    const t = j[timeKey] || j.time || [];
+    msg.innerHTML = '<span class="text-success">Fetched ' + t.length + ' rows.</span>';
+    lastRange = {start_time, end_time};
+    const traces = [];
+    for (const k of supplyKeys) {
+      traces.push({x:t, y:j[k] || [], name:k, stackgroup:'supply',
+                   type:'scatter', mode:'none', fill:'tonexty'});
+    }
+    if (demandKey) {
+      traces.push({x:t, y:j[demandKey] || [], name:demandKey,
+                   type:'scatter', mode:'lines',
+                   line:{color:'black', width:2}});
+    }
+    Plotly.newPlot('plot', traces, {
+      margin:{t:20}, yaxis:{title:'Load'},
+      xaxis:{title:'Time'}, legend:{orientation:'h'}});
+  } catch (e) {
+    msg.innerHTML = '<span class="text-danger">'+e+'</span>';
+  }
+}
+
+async function exportDataset() {
+  const msg = document.getElementById('export-msg');
+  if (!lastRange) {
+    msg.innerHTML = '<span class="text-danger">Fetch the time series first.</span>';
+    return;
+  }
+  msg.textContent = 'Writing...';
+  const filename = document.getElementById('dataset_name').value;
+  const directory = document.getElementById('dataset_dir').value;
+  try {
+    const r = await fetch('/export', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...lastRange, filename, directory})});
+    const j = await r.json();
+    msg.innerHTML = j.ok
+      ? '<span class="text-success">Written: ' + j.path + '</span>'
+      : '<span class="text-danger">' + j.error + '</span>';
+  } catch (e) {
+    msg.innerHTML = '<span class="text-danger">'+e+'</span>';
+  }
+}
+
+// ── Folder picker ──────────────────────────────────────────────────────
+let folderPickerTarget = null;
+let folderCurrentPath = '';
+let folderSelectedName = '';
+
+function joinFolderPath(base, child) {
+  if (!base) return child;
+  if (!child) return base;
+  if (base.endsWith('/') || base.endsWith('\\')) return base + child;
+  const sep = base.includes('\\') && !base.includes('/') ? '\\' : '/';
+  return base + sep + child;
+}
+
+function clearFolderPickerError() {
+  const err = document.getElementById('folderPickerError');
+  err.style.display = 'none';
+  err.textContent = '';
+}
+
+function showFolderPickerError(msg) {
+  const err = document.getElementById('folderPickerError');
+  err.textContent = msg;
+  err.style.display = '';
+}
+
+function openFolderPicker(inputId) {
+  folderPickerTarget = inputId;
+  folderSelectedName = '';
+  clearFolderPickerError();
+  document.getElementById('folderCreateName').value = '';
+  const currentVal = (document.getElementById(inputId).value || '').trim();
+  loadFolder(currentVal || '__HOME__');
+  document.getElementById('folderModal').style.display = 'block';
+}
+
+function closeFolderPicker() {
+  document.getElementById('folderModal').style.display = 'none';
+}
+
+async function loadFolder(path) {
+  clearFolderPickerError();
+  const res = await fetch('/api/browse_folders?path=' + encodeURIComponent(path));
+  const data = await res.json();
+  if (data.error) {
+    if (path !== '__HOME__') loadFolder('__HOME__');
+    return;
+  }
+  folderCurrentPath = data.path || '';
+  folderSelectedName = '';
+  document.getElementById('folderPathDisplay').value = folderCurrentPath || '(root)';
+  document.getElementById('folderUpBtn').disabled = !data.parent;
+  const list = document.getElementById('folderList');
+  list.innerHTML = '';
+  (data.dirs || []).forEach(d => {
+    const div = document.createElement('button');
+    div.type = 'button';
+    div.className = 'list-group-item list-group-item-action';
+    div.textContent = d;
+    div.addEventListener('dblclick', () => {
+      loadFolder(joinFolderPath(folderCurrentPath, d));
+    });
+    div.addEventListener('click', () => {
+      list.querySelectorAll('.list-group-item').forEach(el => el.classList.remove('active'));
+      div.classList.add('active');
+      folderSelectedName = d;
+    });
+    list.appendChild(div);
+  });
+}
+
+function folderUp() {
+  fetch('/api/browse_folders?path=' + encodeURIComponent(folderCurrentPath))
+    .then(r => r.json()).then(data => {
+      if (data.parent != null) loadFolder(data.parent);
+    });
+}
+
+function confirmFolder() {
+  if (folderPickerTarget && folderCurrentPath) {
+    document.getElementById(folderPickerTarget).value = folderSelectedName
+      ? joinFolderPath(folderCurrentPath, folderSelectedName)
+      : folderCurrentPath;
+  }
+  closeFolderPicker();
+}
+
+async function createFolderFromPicker() {
+  const nameInput = document.getElementById('folderCreateName');
+  const folderName = nameInput.value.trim();
+  if (!folderName) { showFolderPickerError('Please enter a folder name.'); return; }
+  clearFolderPickerError();
+  const res = await fetch('/api/create_folder', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_path: folderCurrentPath, folder_name: folderName })
+  });
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    showFolderPickerError(data.error || 'Failed to create folder.');
+    return;
+  }
+  nameInput.value = '';
+  await loadFolder(data.path);
+}
+
+async function init() {
+  // Pull project-specific labels/keys from the server.
+
+    const cfg = await (await fetch('/config')).json();
+    if (cfg.title)        document.getElementById('page-title').textContent = cfg.title;
+    if (cfg.region_label) document.getElementById('region-label').textContent = '(' + cfg.region_label + ')';
+    if (cfg.series_help)  document.getElementById('series-help').innerHTML = cfg.series_help;
+    if (cfg.dataset_dir)  document.getElementById('dataset_dir').value  = cfg.dataset_dir;
+    demandKey  = 'demand';
+    timeKey    = 'time';
+
+  // Load existing battery rows.
+  try {
+    const r = await fetch('/batteries');
+    const j = await r.json();
+    const rows = j.batteries || [];
+    if (rows.length === 0) addBattery();
+    else rows.forEach(addBattery);
+  } catch (e) {
+    addBattery();
+  }
+}
+init();
+</script>
+</body>
+</html>
