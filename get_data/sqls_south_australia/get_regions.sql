@@ -1,0 +1,2 @@
+select distinct region_id
+from du_detail_summary

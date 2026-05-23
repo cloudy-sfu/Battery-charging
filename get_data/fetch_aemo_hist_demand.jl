@@ -110,6 +110,7 @@ SQLite.execute(db, """
         PRIMARY KEY (region_id, end_time)
     )
 """)
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_historical_demand_region_endtime ON historical_demand(region_id, end_time)")
 for href in list_links(ARCHIVE_URL)
     url = DOMAIN * href
     try

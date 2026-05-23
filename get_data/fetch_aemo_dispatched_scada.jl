@@ -108,6 +108,8 @@ SQLite.execute(db, """
         PRIMARY KEY (duid, end_time)
     )
 """)
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dispatched_scada_duid_endtime ON dispatched_scada(duid, end_time)")
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dispatched_scada_endtime ON dispatched_scada(end_time)")
 const COMPLETED_DATES_SQL = read(joinpath(
     pwd(), "get_data", "sqls_south_australia", "get_dispatched_scada_completed_date.sql"), 
     String)

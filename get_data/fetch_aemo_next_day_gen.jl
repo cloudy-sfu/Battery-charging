@@ -107,6 +107,8 @@ SQLite.execute(db, """
         PRIMARY KEY (duid, end_time)
     )
 """)
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_next_day_gen_duid_endtime ON next_day_gen(duid, end_time)")
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_next_day_gen_endtime ON next_day_gen(end_time)")
 for href in list_links(ARCHIVE_URL)
     url = DOMAIN * href
     try

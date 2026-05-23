@@ -17,6 +17,7 @@ SQLite.execute(db, """
         PRIMARY KEY (duid)
     )
 """)
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_du_detail_summary_region ON du_detail_summary(region_id)")
 
 url = "https://www.nemweb.com.au/Data_Archive/Wholesale_Electricity/MMSDM/2026/MMSDM_2026_04/MMSDM_Historical_Data_SQLLoader/DATA/PUBLIC_ARCHIVE%23DUDETAILSUMMARY%23FILE01%23202604010000.zip"
 
