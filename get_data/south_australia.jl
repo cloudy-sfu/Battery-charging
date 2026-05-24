@@ -60,8 +60,8 @@ open_db() = SQLite.DB(DB_PATH)
 function load_batteries()::DataFrame
     db = open_db()
     DataFrame(SQLite.DBInterface.execute(
-        db, "SELECT name, capacity, level, c_duration, d_duration, efficiency
-              FROM batteries ORDER BY name"))
+        db, "SELECT capacity, level, c_power, d_power, efficiency
+              FROM batteries"))
 end
 
 function save_batteries(rows::AbstractVector)
@@ -70,18 +70,15 @@ function save_batteries(rows::AbstractVector)
         SQLite.DBInterface.execute(db, "DELETE FROM batteries")
         stmt = SQLite.Stmt(db, """
             INSERT INTO batteries
-                (name, capacity, level, c_duration, d_duration, efficiency)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (capacity, level, c_power, d_power, efficiency)
+            VALUES (?, ?, ?, ?, ?)
         """)
         for r in rows
-            name = strip(String(get(r, "name", "")))
-            isempty(name) && continue
             SQLite.DBInterface.execute(stmt, (
-                name,
                 parse(Float64, string(r["capacity"])),
                 parse(Float64, string(r["level"])),
-                parse(Float64, string(r["c_duration"])),
-                parse(Float64, string(r["d_duration"])),
+                parse(Float64, string(r["c_power"])),
+                parse(Float64, string(r["d_power"])),
                 parse(Float64, string(r["efficiency"])),
             ))
         end
