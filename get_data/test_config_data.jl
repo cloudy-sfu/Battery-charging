@@ -1,17 +1,12 @@
 #=
-south_australia.jl
+artificial_random.jl
 
 Genie.jl backend that serves the generic `config_data.html` page and provides
-SA1-specific data endpoints (battery list editing, supply/demand series from
-`south_australia.db`, and JLD2 dataset export).
-
-The HTML page is intentionally project-agnostic. All project-specific labels,
-column names and time defaults are exposed via the `/config` endpoint.
+artificial random data generation for demand and supply.
 
 Launch
 ======
-    julia --project=. get_data/south_australia.jl
-Then open http://127.0.0.1:8000.
+    julia --project=. get_data/artificial_random.jl
 =#
 
 using Genie, Genie.Router, Genie.Renderer, Genie.Renderer.Json, Genie.Requests
@@ -20,13 +15,12 @@ using DataFrames
 using Dates
 using JLD2
 using JSON3
+using Random
 
 include(joinpath(pwd(), "web_service.jl"))
 
 const HTML_PATH  = joinpath(pwd(), "get_data", "config_data.html")
-const DB_PATH    = joinpath(pwd(), "get_data", "south_australia.db")
-const SQL_PATH   = joinpath(pwd(), "get_data", "sqls_south_australia", "get_supply_demand.sql")
-const REGION_ID  = "SA1"
+const DB_PATH    = joinpath(pwd(), "get_data", "artificial_random.db")
 const EXPORT_DIR = joinpath(pwd(), "get_data", "datasets")
 
 isdir(EXPORT_DIR) || mkpath(EXPORT_DIR)
@@ -36,18 +30,9 @@ isdir(EXPORT_DIR) || mkpath(EXPORT_DIR)
 # ---------------------------------------------------------------------------
 
 const PAGE_CONFIG = Dict(
-    "title"        => "South Australia Battery Dataset Builder",
-    "region_label" => "region $(REGION_ID)",
-    "series_help"  => """
-        Load values are fetched for region <code>$(REGION_ID)</code> from
-        <code>south_australia.db</code> using
-        <code>sqls_south_australia/get_supply_demand.sql</code>.<br>
-        Net demand load is demand minus the sum of supply sources.<br>
-        Units are MWh per 30-minute interval as returned by AEMO. Sampling is
-        30 minutes; rows are ordered from earliest to latest.<br>
-        Times must be entered as <code>YYYY-MM-DD HH:MM:SS</code> (UTC,
-        half-open interval <code>(start, end]</code>).
-        """,
+    "title"        => "Artificial Random Data Builder",
+    "region_label" => "(Random Simulation)",
+    "series_help"  => "Generates 1 demand and 2 supplies randomly. The sum of expectations of the two supplies equals the expectation of the demand. Resolution is 30 minutes.",
     "dataset_dir"  => EXPORT_DIR,
 )
 
@@ -55,13 +40,16 @@ const PAGE_CONFIG = Dict(
 # Data access
 # ---------------------------------------------------------------------------
 
-open_db() = SQLite.DB(DB_PATH)
+function open_db()
+    db = SQLite.DB(DB_PATH)
+    SQLite.DBInterface.execute(db, "CREATE TABLE IF NOT EXISTS batteries (capacity REAL, level REAL, c_power REAL, d_power REAL, efficiency REAL)")
+    return db
+end
 
 function load_batteries()::DataFrame
     db = open_db()
     DataFrame(SQLite.DBInterface.execute(
-        db, "SELECT capacity, level, c_power, d_power, efficiency
-              FROM batteries"))
+        db, "SELECT capacity, level, c_power, d_power, efficiency FROM batteries"))
 end
 
 function save_batteries(rows::AbstractVector)
@@ -85,64 +73,25 @@ function save_batteries(rows::AbstractVector)
     end
 end
 
-"""
-    fill_series!(v)
+function fetch_supply_demand(start_time::AbstractString, end_time::AbstractString)
+    # The browser sends datetime-local values like "2026-05-13T10:00"
+    dt_start = DateTime(start_time[1:16])
+    dt_end   = DateTime(end_time[1:16])
+    
+    t_idx = collect(dt_start:Minute(30):dt_end)
+    n = length(t_idx)
 
-Linearly interpolate NaN values between known points, then back-fill before the
-first known point and forward-fill after the last. Returns `false` if the
-vector is entirely NaN.
-"""
-function fill_series!(v::AbstractVector{Float64})::Bool
-    n = length(v)
-    n == 0 && return false
-    idxs = findall(!isnan, v)
-    isempty(idxs) && return false
-    # Interpolate between consecutive known points
-    for k in 1:length(idxs)-1
-        i, j = idxs[k], idxs[k+1]
-        j == i + 1 && continue
-        yi, yj = v[i], v[j]
-        for m in i+1:j-1
-            v[m] = yi + (yj - yi) * (m - i) / (j - i)
-        end
-    end
-    # Back-fill before first known
-    first_i = idxs[1]
-    for m in 1:first_i-1
-        v[m] = v[first_i]
-    end
-    # Forward-fill after last known
-    last_i = idxs[end]
-    for m in last_i+1:n
-        v[m] = v[last_i]
-    end
-    true
-end
+    # Random generation
+    # Supply 1 mean = 40, Supply 2 mean = 60, Demand mean = 100
+    # Expected supplies = Expected demand
+    supply1 = 40.0 .+ 5.0 .* randn(n)
+    supply2 = 60.0 .+ 10.0 .* randn(n)
+    demand  = 100.0 .+ 11.18 .* randn(n) # sqrt(5^2 + 10^2) ≈ 11.18
 
-function fetch_supply_demand(start_time::AbstractString,
-                             end_time::AbstractString)
-    sql = read(SQL_PATH, String)
-    db = open_db()
-    df = DataFrame(SQLite.DBInterface.execute(
-        db, sql,
-        (region = REGION_ID, start_time = start_time, end_time = end_time)))
-    df.end_time = DateTime.(df.end_time, dateformat"yyyy-mm-dd HH:MM:SS")
-    full_idx = DataFrame(end_time = collect(minimum(df.end_time):Minute(30):maximum(df.end_time)))
-    df = leftjoin(full_idx, df, on = :end_time)
-    sort!(df, :end_time)
+    df = DataFrame(end_time = t_idx, demand_load = demand, supply1 = supply1, supply2 = supply2)
+    supply_keys = [:supply1, :supply2]
 
-    for col in propertynames(df)[2:end]
-        v = Float64[x === missing || x === nothing ? NaN : Float64(x)
-                    for x in df[!, col]]
-        any_non_missing = fill_series!(v)
-        if any_non_missing
-            df[!, col] = v
-        else
-            select!(df, Not(col))
-        end
-    end
-    supply_keys = propertynames(df)[3:end]  # exclude end_time, demand_load
-    df, supply_keys
+    return df, supply_keys
 end
 
 # ---------------------------------------------------------------------------
@@ -254,7 +203,7 @@ route("/export", method = POST) do
         batteries = load_batteries()
         load, _ = fetch_supply_demand(String(body["start_time"]),
                                       String(body["end_time"]))
-        filename = String(get(body, "filename", "sa_dataset.jld2"))
+        filename = String(get(body, "filename", "random_dataset.jld2"))
         endswith(filename, ".jld2") || (filename *= ".jld2")
         filename = basename(filename)
         directory = String(get(body, "directory", EXPORT_DIR))
@@ -264,7 +213,7 @@ route("/export", method = POST) do
         jldopen(path, "w") do file
             file["batteries"]  = batteries
             file["load"]       = load
-            file["region"]     = REGION_ID
+            file["region"]     = "random"
             file["start_time"] = String(body["start_time"])
             file["end_time"]   = String(body["end_time"])
         end

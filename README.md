@@ -1,9 +1,36 @@
 # Battery charging
  Battery charging and discharging planning
 
+![](https://shields.io/badge/dependencies-Julia_1.12-purple)
+
+## Install
+
+Create and activate a Julia environment.
+
+>   [!note]
+>
+>   If in Windows operation system and have installed PowerShell 7, the user can create virtual environment by https://github.com/cloudy-sfu/Julia-venv
+
 ## Model definition
 
-![model definition flowchart](./assets/model_definition.png)
+This project formulates battery charging and discharging as a mixed-integer linear programming (MILP) problem. Given an electricity market with known demand and known generation from non-battery sources over a planning horizon, a group of batteries is scheduled to charge when the market is in over-supply and to discharge when the market is in shortage. Other generation (such as renewable power generation) sources first meet the demand directly; any surplus is routed to the over-supply grid, where batteries may charge from it. When generation falls short, batteries discharge into the shortage grid to help serve the remaining demand. The objective is to minimize the total unserved electricity demand across the horizon.
+
+```mermaid
+%%{init: {'flowchart': {'curve': 'basis'}}}%%
+flowchart LR
+    ES["Electricity supply<br/>(other sources)"]
+    OSM(Over-supply <br/>grid)
+    SM(Shortage <br/>grid)
+    ED[Electricity<br/>demand]
+    BAT[Batteries]
+
+    ES --> OSM
+    SM --> ED
+    OSM <-.->|"Supply and demand changes"| SM
+    OSM -.->|Charge| BAT
+    BAT -.->|Discharge| SM
+
+```
 
 ### Constants
 
@@ -94,36 +121,49 @@ $$
 \sum_{i = 1}^{m}H_{ij} \leq \max\left( 0, -D_{j} \right), \quad \forall j = 1, ..., n
 $$
 
-## Results
+## Prepare data
 
-Fill in the required parameters and click "Solve", the program will solve this problem and show results in 4 tabs.
+### South Australia AEMO Generation
 
-In "Solution" tab, it gives the value of all variables. Refer to [Javascript LP solver](https://www.npmjs.com/package/javascript-lp-solver) to understand the meaning of the results. If a variable is not presented, it's value is 0.
+The Australian Energy Market Operator (AEMO) runs the National Electricity Market (NEM), which links the eastern and southern states of Australia through a shared high-voltage transmission grid. AEMO dispatches generators every 5 minutes to match demand at the lowest offered price, and publishes the resulting data, e.g. regional demand, per-unit SCADA generation, and next-day actual generation (non-scheduled dispatchable units).
 
-*The following figures are only examples to explain how the results look like. The values in the figure are not an optimal solution.*
+South Australia is a useful slice of this data, because the region has a high share of wind and rooftop solar, a small number of large grid-scale batteries (such as the Honesdale Power Reserve, Torrens Island BESS, and Lake Bonney BESS), and a handful of gas-fired stations as backup. Each battery appears in AEMO data as one or more dispatchable units (DUIDs) with registered charge or discharge capacity and a storage size in MWh, which map directly onto the model parameters $C_i$, $I_i$, and $O_i$ above. Regional demand minus non-battery generation gives the $D_j$ series this project optimizes against.
 
-In "Charging history" tab, it shows the figure of remained energy of each battery. The green line and background means charging; the red means discharging; the grey means idle. If the charging status of the background mismatches the increasing or decreasing value of remained energy, the solution must be not optimal. For example, if the background is red but the remained energy is increasing, there is $S^d>0, A_{i,j} > A_{i,j-1}$ and some constraints are violated. If the background is red but the remained energy is flat, it means $S^d>0$ (allowing discharging) but the battery is idle. Therefore, the result is not optimal as $S^d = 0$ is tighter. 
+The scripts under `get_data/` fetch these feeds and load them into a local SQLite database, so the MILP can be solved on a realistic, recent slice of the South Australian grid.
 
-The maximum value of Y-axis always the energy capacity of battery, therefore the height ratio of curve means the battery level. The X-axis value "1 h" means at the moment of "1:00".
+To collect the data, run the following command in terminal.
 
-![Charging history of battery 1](assets/battery_1.png)
+```
+julia get_data/init_sa_battery.jl
+julia get_data/fetch_aemo_dispatched_scada.jl
+julia get_data/fetch_aemo_du_detail_summary.jl
+julia get_data/fetch_aemo_hist_demand.jl
+julia get_data/fetch_aemo_next_day_gen.jl
+```
 
-![Charging history of battery 2](assets/battery_2.png)
+Check the data integrity by run the following command in terminal.
 
-In "Power history" tab, it shows the output and input power of each battery. The positive part of Y-axis is output (discharging) power, and the negative part is input (charging) power. The X-axis value "1 h" means the end of the period "0:00 ~ 1:00".
+```
+julia get_data/south_australia_check_integrity.jl
+```
 
-![Power history](assets/power_history.png)
+The terminal will output whether the data has missing value and what is the missed time range. Rerun the corresponding script or manually input data into the database to fill missing data. The data integrity check doesn't have a compulsory passing condition, because the program will fill missing values by statistical methods, instead of breaking down.
 
-In "Served electricity" tab, the height of the grey bar is the amount of electricity demand. The positive value means other supply resources cannot fulfill the demand of the electricity market; the negative value means redundant electricity is available in the electricity market and batteries owner can use these energy to charge batteries. The stacked bars of batteries are the amount of energy taken or served in each period. 
+>   [!note]
+>
+>   At the moment, re-running `fetch_aemo_dispatched_scada.jl` will check existed data in database and fetch new data incrementally. Other scripts can only fetch all the data and update the whole table.
 
-The following table explains how to compare the height of bars.
+To create a dataset, run the following command in terminal.
 
-| Stacked height of battery bars \_\_\_\_\_\_ the height of grey bar. | Grey bar is positive.                                        | Grey bar is negative.                                        |
-| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| equal to                                                     | All demand are served by the batteries group.                | All redundant energy in the market is used to charge batteries. |
-| is shorter than (absolute value in either direction)         | The batteries group cannot fulfill the electricity demand.   | Part of the redundant energy in the market is used to charge batteries, the other part is wasted. |
-| is longer than                                               | The batteries group over-serve electricity and the redundant electricity is wasted. | Infeasible.                                                  |
+```
+julia get_data/south_australia.jl
+```
 
-The X-axis value "1 h" means the end of the period "0:00 ~ 1:00".
+In the web page:
 
-![Served electricity](assets/served_electricity.png)
+-   Config specification of the battery group
+-   Select start and end time of electricity load time series (supply and demand) to preview the line plot
+-   Export the dataset containing battery and load to the given file path
+
+## Solve
+
