@@ -167,3 +167,14 @@ In the web page:
 
 ## Solve
 
+Let the saved dataset file path is `$dataset`.
+
+Assume the file path to save the solution in format of JLD2 is `$solution`; the file path to save the visualization report in format of HTML is `$report` (all can be customized).
+
+To solve the problem and generate the report, run the following command in terminal.
+
+```
+julia solve.jl --input_path $dataset --output_path $solution
+julia visualization.jl --input_path $solution --output_path $report
+```
+

@@ -38,3 +38,4 @@ get_data/*.db
 get_data/*.db-journal
 get_data/.idea
 get_data/datasets/
+results/

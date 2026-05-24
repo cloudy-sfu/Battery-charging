@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Battery Charging Plan - Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+</head>
+<style>
+  table.sol-table { border-collapse: collapse; font-size: 0.85rem; }
+  table.sol-table th, table.sol-table td {
+      border: 1px solid #999; padding: 2px 6px; text-align: right;
+      white-space: nowrap;
+  }
+  table.sol-table th { background: #f0f0f0; position: sticky; top: 0; }
+  .sol-scroll { overflow: auto; max-height: 70vh; }
+</style>
+<body class="container-sm">
+<div class="row alert"><div class="col-sm-12">
+  <p class="lead fw-bold">Batteries Charging and Discharging Plan</p>
+</div></div>
+<div class="row alert"><div class="col-sm-12">
+  <ul class="nav nav-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="summary-tab" data-bs-toggle="tab"
+              data-bs-target="#summary" type="button" role="tab">Summary</button></li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="charge-hist-tab" data-bs-toggle="tab"
+              data-bs-target="#charge-hist" type="button" role="tab">Charging history</button></li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="power-tab" data-bs-toggle="tab"
+              data-bs-target="#power" type="button" role="tab">Power history</button></li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="service-tab" data-bs-toggle="tab"
+              data-bs-target="#service" type="button" role="tab">Served electricity</button></li>
+  </ul>
+  <div class="tab-content mt-3">
+    <div class="tab-pane fade show active" id="summary" role="tabpanel"></div>
+    <div class="tab-pane fade" id="charge-hist" role="tabpanel"></div>
+    <div class="tab-pane fade" id="power" role="tabpanel"></div>
+    <div class="tab-pane fade" id="service" role="tabpanel"></div>
+  </div>
+</div></div>
+<script>
+const SOLUTION = {{SOLUTION_JSON}};
+
+function fmt(x) {
+    if (x === null || x === undefined) return '';
+    if (typeof x !== 'number') return String(x);
+    if (!isFinite(x)) return String(x);
+    if (x === 0) return '0';
+    const a = Math.abs(x);
+    if (a >= 1e-4 && a < 1e6) return (Math.round(x * 1e6) / 1e6).toString();
+    return x.toExponential(6);
+}
+
+function build_summary() {
+    const { m, n, A, P, H, Sc, Sd, t, demand, end_time, energy_capacity } = SOLUTION;
+    const root = document.getElementById('summary');
+    const hasTime = Array.isArray(end_time) && end_time.length === n;
+
+    let html = '';
+    html += '<table class="sol-table mb-3"><tbody>';
+    html += `<tr><th>Termination status</th><td style="text-align:left;">${SOLUTION.status}</td></tr>`;
+    html += `<tr><th>Primal status</th><td style="text-align:left;">${SOLUTION.primal_status ?? ''}</td></tr>`;
+    html += `<tr><th>Objective</th><td style="text-align:left;">${SOLUTION.objective === null ? 'N/A' : fmt(SOLUTION.objective)}</td></tr>`;
+    html += `<tr><th>Batteries (m)</th><td style="text-align:left;">${m}</td></tr>`;
+    html += `<tr><th>Time slots (n)</th><td style="text-align:left;">${n}</td></tr>`;
+    html += '</tbody></table>';
+
+    html += '<h6>Battery parameters</h6>';
+    html += '<div class="sol-scroll mb-3"><table class="sol-table"><thead><tr>';
+    html += '<th>i</th><th>capacity</th></tr></thead><tbody>';
+    for (let i = 0; i < m; i++) {
+        html += `<tr><td>${i+1}</td><td>${fmt(energy_capacity[i])}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+
+    const headCells = ['j'];
+    if (hasTime) headCells.push('end_time');
+    headCells.push('demand', 't (slack)');
+    for (let i = 0; i < m; i++) {
+        headCells.push(`A[${i+1}]`, `P[${i+1}]`, `H[${i+1}]`,
+                       `Sc[${i+1}]`, `Sd[${i+1}]`);
+    }
+    html += '<h6>Time series (variables)</h6>';
+    html += '<div class="sol-scroll mb-3"><table class="sol-table"><thead><tr>';
+    html += headCells.map(h => `<th>${h}</th>`).join('');
+    html += '</tr></thead><tbody>';
+    for (let j = 0; j < n; j++) {
+        const row = [j + 1];
+        if (hasTime) row.push(end_time[j]);
+        row.push(fmt(demand[j]), fmt(t[j]));
+        for (let i = 0; i < m; i++) {
+            row.push(fmt(A[i][j]), fmt(P[i][j]), fmt(H[i][j]),
+                     fmt(Sc[i][j]), fmt(Sd[i][j]));
+        }
+        html += '<tr>' + row.map(v => `<td>${v}</td>`).join('') + '</tr>';
+    }
+    const finalRow = [n + 1];
+    if (hasTime) finalRow.push('');
+    finalRow.push('', '');
+    for (let i = 0; i < m; i++) {
+        finalRow.push(fmt(A[i][n]), '', '', '', '');
+    }
+    html += '<tr>' + finalRow.map(v => `<td>${v}</td>`).join('') + '</tr>';
+    html += '</tbody></table></div>';
+
+    root.innerHTML = html;
+}
+build_summary();
+
+const rgba_green = 'rgba(175, 255, 175, 0.4)';
+const rgba_red   = 'rgba(255, 175, 175, 0.4)';
+const rgba_grey  = 'rgba(175, 175, 175, 0.4)';
+const rgba_blank = 'rgba(255, 255, 255, 0)';
+
+function zeros(m, n) {
+    const a = new Array(m);
+    for (let i = 0; i < m; i++) a[i] = new Array(n).fill(0);
+    return a;
+}
+
+const chart_1_option_temp = {
+    title: { text: "" },
+    tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
+    toolbox: { show: true, feature: { saveAsImage: { pixelRatio: 4 } } },
+    xAxis: { type: "value", axisLabel: { formatter: "{value} h" }, min: 0, max: null },
+    yAxis: { type: "value", axisLabel: { formatter: "{value} MWh" },
+             axisPointer: { snap: true }, min: 0, max: null },
+    visualMap: { show: false, dimension: 0, pieces: [] },
+    series: [{
+        name: "Remained electricity", type: "line", smooth: true, symbol: "none",
+        data: [], markArea: { data: [] },
+    }],
+};
+const chart_2_option_temp = {
+    tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
+    toolbox: { show: true, feature: { saveAsImage: { pixelRatio: 4 } } },
+    legend: { data: [] },
+    xAxis: { type: "value", axisLabel: { formatter: "{value} h" }, min: 1, max: null },
+    yAxis: { type: "value", axisLabel: { formatter: "{value} MW" }, name: "Output power" },
+    series: [],
+};
+const chart_2_series_temp = { name: null, data: null, type: "line", smooth: true, symbol: "none" };
+const chart_3_option_temp = {
+    tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
+    toolbox: { show: true, feature: { saveAsImage: { pixelRatio: 4 } } },
+    yAxis: [{ type: "value", axisLabel: { formatter: "{value} MWh" } }],
+    xAxis: [{ type: "category", axisLabel: { formatter: "{value} h" }, data: [] }],
+    legend: { data: ["Demand"] },
+    series: [{ name: "Demand", type: "bar", stack: "",
+               color: "rgba(175, 175, 175, 0.4)", data: [] }],
+};
+const chart_3_series_temp = { name: null, type: "bar", stack: "Service", data: [] };
+
+function draw_charts() {
+    const { m, n, A, P, H, Sc, Sd, demand, energy_capacity } = SOLUTION;
+    const figure_height = Math.round(0.65 * window.outerHeight);
+    const figure_width = document.querySelector('ul[role="tablist"]').offsetWidth;
+
+    const canvas_1_set = document.getElementById('charge-hist');
+    canvas_1_set.innerHTML = '';
+    const canvas_2_set = document.getElementById('power');
+    canvas_2_set.innerHTML = '';
+    const canvas_2 = document.createElement('div');
+    canvas_2.style.height = figure_height + 'px';
+    canvas_2.style.width  = figure_width + 'px';
+    canvas_2_set.appendChild(canvas_2);
+    const chart_2 = echarts.init(canvas_2);
+    const chart_2_option = structuredClone(chart_2_option_temp);
+    chart_2_option.xAxis.max = n;
+
+    const canvas_3_set = document.getElementById('service');
+    canvas_3_set.innerHTML = '';
+    const canvas_3 = document.createElement('div');
+    canvas_3.style.height = figure_height + 'px';
+    canvas_3.style.width  = figure_width + 'px';
+    canvas_3_set.appendChild(canvas_3);
+    const chart_3 = echarts.init(canvas_3);
+    const chart_3_option = structuredClone(chart_3_option_temp);
+    chart_3_option.xAxis[0].data = zeros(n, 1).map((_, j) => j + 1);
+    chart_3_option.series[0].data = demand;
+
+    for (let i = 0; i < m; i++) {
+        const canvas_1 = document.createElement('div');
+        canvas_1.style.height = figure_height + 'px';
+        canvas_1.style.width  = figure_width + 'px';
+        canvas_1_set.appendChild(canvas_1);
+        const chart_1 = echarts.init(canvas_1);
+        const chart_1_option = structuredClone(chart_1_option_temp);
+        chart_1_option.title.text = `Battery ${i+1}`;
+        chart_1_option.xAxis.max  = n;
+        chart_1_option.yAxis.max  = energy_capacity[i];
+
+        // Binary controls Sc/Sd can be loose in the LP relaxation; derive the
+        // phase from the actual flows H (charge) and P (discharge).
+        const TOL = 1e-6;
+        const phaseOf = (j) => {
+            const charging    = H[i][j] > TOL;
+            const discharging = P[i][j] > TOL;
+            if (!charging && !discharging) return 'idle';
+            if (charging && !discharging)  return 'charge';
+            if (!charging && discharging)  return 'discharge';
+            return 'mixed';
+        };
+        const colorFor = (ph) => {
+            if (ph === 'idle')      return ['grey',  rgba_grey];
+            if (ph === 'charge')    return ['green', rgba_green];
+            if (ph === 'discharge') return ['red',   rgba_red];
+            return ['blank', rgba_blank];
+        };
+        const pushPhase = (lb, ub, ph) => {
+            const [pc, ma] = colorFor(ph);
+            chart_1_option.visualMap.pieces.push({ gt: lb, lte: ub, color: pc });
+            chart_1_option.series[0].markArea.data.push(
+                [{ xAxis: lb, itemStyle: { color: ma } }, { xAxis: ub }]);
+        };
+        let lb = 0;
+        let status = phaseOf(0);
+        for (let j = 1; j < n; j++) {
+            const ph = phaseOf(j);
+            if (ph === status) continue;
+            pushPhase(lb, j, status);
+            lb = j;
+            status = ph;
+        }
+        pushPhase(lb, n, status);
+
+        chart_1_option.series[0].data = A[i].map((v, idx) => [idx, v]);
+        chart_1.setOption(chart_1_option);
+
+        chart_2_option.legend.data.push(`Battery ${i+1}`);
+        const s2 = structuredClone(chart_2_series_temp);
+        s2.name = `Battery ${i+1}`;
+        s2.data = zeros(n, 1).map((_, j) => [j + 1, P[i][j] - H[i][j]]);
+        chart_2_option.series.push(s2);
+
+        chart_3_option.legend.data.push(`Battery ${i+1}`);
+        const s3 = structuredClone(chart_3_series_temp);
+        s3.name = `Battery ${i+1}`;
+        s3.data = zeros(n, 1).map((_, j) => P[i][j] - H[i][j]);
+        chart_3_option.series.push(s3);
+    }
+    chart_2.setOption(chart_2_option);
+    chart_3.setOption(chart_3_option);
+}
+
+window.addEventListener('load', draw_charts);
+</script>
+</body>
+</html>
