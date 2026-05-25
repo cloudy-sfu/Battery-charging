@@ -1,4 +1,5 @@
 using ArgParse
+using Dates
 using JLD2
 using DataFrames
 using JuMP
@@ -39,7 +40,13 @@ supply_sum = ncol(load) >= 3 ?
     zeros(Float64, nrow(load))
 D = demand_col .- supply_sum
 end_time = collect(load[!, 1])
-println("Loaded dataset: $(nrow(batteries)) batteries, $(length(D)) time slots.")
+
+# Infer sampling step (hours) from end_time. Require a unique spacing.
+diffs = unique(diff(end_time))
+length(diffs) == 1 || error("Non-uniform sampling in load[:,1]: found $(length(diffs)) distinct steps: $diffs")
+Δt = isa(diffs[1], Period) ? Dates.value(Second(diffs[1])) / 3_600 : float(diffs[1])
+Δt > 0 || error("Non-positive sampling step inferred from end_time: $Δt")
+println("Loaded dataset: $(nrow(batteries)) batteries, $(length(D)) time slots, Δt = $Δt h.")
 
 # %% Battery parameters
 C  = Float64.(batteries.capacity)
@@ -67,12 +74,12 @@ timeout > 0 && set_time_limit_sec(model, timeout)
 @constraint(model, [i = 1:m], A[i, 1] == A0[i])
 @constraint(model, [j = 1:n], D[j] - sum(P[i, j] for i in 1:m) <= t[j])
 @constraint(model, [i = 1:m, j = 1:n],
-    A[i, j] + E[i] * H[i, j] - P[i, j] == A[i, j + 1])
+    A[i, j] + (E[i] * H[i, j] - P[i, j]) * Δt == A[i, j + 1])
 @constraint(model, [i = 1:m, j = 1:n], H[i, j] <= Ip[i] * Sc[i, j])
 @constraint(model, [i = 1:m, j = 1:n], P[i, j] <= Op[i] * Sd[i, j])
 @constraint(model, [i = 1:m, j = 1:n], Sc[i, j] + Sd[i, j] <= 1)
 @constraint(model, [i = 1:m, j = 1:n], A[i, j] <= C[i])
-@constraint(model, [i = 1:m, j = 1:n], P[i, j] <= A[i, j])
+@constraint(model, [i = 1:m, j = 1:n], P[i, j] * Δt <= A[i, j])
 @constraint(model, [j = 1:n], sum(H[i, j] for i in 1:m) <= max(0.0, -D[j]))
 
 # %% Solve
