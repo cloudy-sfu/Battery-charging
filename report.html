@@ -15,11 +15,10 @@
       white-space: nowrap;
   }
   table.sol-table th { background: #f0f0f0; position: sticky; top: 0; }
-  .sol-scroll { overflow: auto; max-height: 70vh; }
 </style>
 <body class="container-sm">
 <div class="row alert"><div class="col-sm-12">
-  <p class="lead fw-bold">Batteries Charging and Discharging Plan</p>
+  <h3>Batteries Charging and Discharging Plan</h3>
 </div></div>
 <div class="row alert"><div class="col-sm-12">
   <ul class="nav nav-tabs" role="tablist">
@@ -71,7 +70,7 @@ function build_summary() {
     html += '</tbody></table>';
 
     html += '<h6>Battery parameters</h6>';
-    html += '<div class="sol-scroll mb-3"><table class="sol-table"><thead><tr>';
+    html += '<div class="mb-3"><table class="sol-table"><thead><tr>';
     html += '<th>i</th><th>capacity</th></tr></thead><tbody>';
     for (let i = 0; i < m; i++) {
         html += `<tr><td>${i+1}</td><td>${fmt(energy_capacity[i])}</td></tr>`;
@@ -85,8 +84,8 @@ function build_summary() {
         headCells.push(`A[${i+1}]`, `P[${i+1}]`, `H[${i+1}]`,
                        `Sc[${i+1}]`, `Sd[${i+1}]`);
     }
-    html += '<h6>Time series (variables)</h6>';
-    html += '<div class="sol-scroll mb-3"><table class="sol-table"><thead><tr>';
+    html += '<h6>Time series</h6>';
+    html += '<div class="mb-3" style="overflow-x: auto;"><table class="sol-table"><thead><tr>';
     html += headCells.map(h => `<th>${h}</th>`).join('');
     html += '</tr></thead><tbody>';
     for (let j = 0; j < n; j++) {
@@ -122,42 +121,60 @@ function zeros(m, n) {
     for (let i = 0; i < m; i++) a[i] = new Array(n).fill(0);
     return a;
 }
-
 const chart_1_option_temp = {
-    title: { text: "" },
+    title: { text: "", left: "center" },
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     toolbox: { show: true, feature: { saveAsImage: { pixelRatio: 4 } } },
-    xAxis: { type: "value", axisLabel: { formatter: "{value} h" }, min: 0, max: null },
+    grid: { top: 60 },
+    dataZoom: [
+        { type: "inside", xAxisIndex: [0] },
+        { type: "slider", xAxisIndex: [0] }
+    ],
+    xAxis: { type: "category", name: "Time", boundaryGap: false, data: [] },
     yAxis: { type: "value", axisLabel: { formatter: "{value} MWh" },
              axisPointer: { snap: true }, min: 0, max: null },
     visualMap: { show: false, dimension: 0, pieces: [] },
     series: [{
-        name: "Remained electricity", type: "line", smooth: true, symbol: "none",
+        type: "line", smooth: true, symbol: "none",
         data: [], markArea: { data: [] },
     }],
 };
 const chart_2_option_temp = {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     toolbox: { show: true, feature: { saveAsImage: { pixelRatio: 4 } } },
-    legend: { data: [] },
-    xAxis: { type: "value", axisLabel: { formatter: "{value} h" }, min: 1, max: null },
+    legend: { data: [], top: 0 },
+    grid: { top: 40 },
+    dataZoom: [
+        { type: "inside", xAxisIndex: [0] },
+        { type: "slider", xAxisIndex: [0] }
+    ],
+    xAxis: { type: "category", name: "Time", boundaryGap: false, data: [] },
     yAxis: { type: "value", axisLabel: { formatter: "{value} MW" }, name: "Output power" },
     series: [],
 };
-const chart_2_series_temp = { name: null, data: null, type: "line", smooth: true, symbol: "none" };
 const chart_3_option_temp = {
     tooltip: { trigger: "axis", axisPointer: { type: "cross" } },
     toolbox: { show: true, feature: { saveAsImage: { pixelRatio: 4 } } },
+    legend: { data: ["Demand"], top: 0 },
+    grid: { top: 40 },
+    dataZoom: [
+        { type: "inside", xAxisIndex: [0] },
+        { type: "slider", xAxisIndex: [0] }
+    ],
     yAxis: [{ type: "value", axisLabel: { formatter: "{value} MWh" } }],
-    xAxis: [{ type: "category", axisLabel: { formatter: "{value} h" }, data: [] }],
-    legend: { data: ["Demand"] },
+    xAxis: [{ type: "category", name: "Time", boundaryGap: true, data: [] }],
     series: [{ name: "Demand", type: "bar", stack: "",
                color: "rgba(175, 175, 175, 0.4)", data: [] }],
 };
+const chart_2_series_temp = { name: null, data: null, type: "line", smooth: true, symbol: "none" };
 const chart_3_series_temp = { name: null, type: "bar", stack: "Service", data: [] };
 
 function draw_charts() {
-    const { m, n, A, P, H, Sc, Sd, demand, energy_capacity } = SOLUTION;
+    const { m, n, A, P, H, Sc, Sd, demand, energy_capacity, end_time } = SOLUTION;
+    const hasTime = Array.isArray(end_time) && end_time.length === n;
+    const xData = hasTime ? end_time : zeros(n, 1).map((_, j) => j + 1);
+    const xData1 = hasTime ? ["Start", ...end_time] : zeros(n + 1, 1).map((_, j) => j);
+
     const figure_height = Math.round(0.65 * window.outerHeight);
     const figure_width = document.querySelector('ul[role="tablist"]').offsetWidth;
 
@@ -171,7 +188,7 @@ function draw_charts() {
     canvas_2_set.appendChild(canvas_2);
     const chart_2 = echarts.init(canvas_2);
     const chart_2_option = structuredClone(chart_2_option_temp);
-    chart_2_option.xAxis.max = n;
+    chart_2_option.xAxis.data = xData;
 
     const canvas_3_set = document.getElementById('service');
     canvas_3_set.innerHTML = '';
@@ -181,7 +198,7 @@ function draw_charts() {
     canvas_3_set.appendChild(canvas_3);
     const chart_3 = echarts.init(canvas_3);
     const chart_3_option = structuredClone(chart_3_option_temp);
-    chart_3_option.xAxis[0].data = zeros(n, 1).map((_, j) => j + 1);
+    chart_3_option.xAxis[0].data = xData;
     chart_3_option.series[0].data = demand;
 
     for (let i = 0; i < m; i++) {
@@ -192,7 +209,7 @@ function draw_charts() {
         const chart_1 = echarts.init(canvas_1);
         const chart_1_option = structuredClone(chart_1_option_temp);
         chart_1_option.title.text = `Battery ${i+1}`;
-        chart_1_option.xAxis.max  = n;
+        chart_1_option.xAxis.data = xData1;
         chart_1_option.yAxis.max  = energy_capacity[i];
 
         // Binary controls Sc/Sd can be loose in the LP relaxation; derive the
@@ -229,19 +246,19 @@ function draw_charts() {
         }
         pushPhase(lb, n, status);
 
-        chart_1_option.series[0].data = A[i].map((v, idx) => [idx, v]);
+        chart_1_option.series[0].data = A[i];
         chart_1.setOption(chart_1_option);
 
         chart_2_option.legend.data.push(`Battery ${i+1}`);
         const s2 = structuredClone(chart_2_series_temp);
         s2.name = `Battery ${i+1}`;
-        s2.data = zeros(n, 1).map((_, j) => [j + 1, P[i][j] - H[i][j]]);
+        s2.data = P[i].map((_, j) => P[i][j] - H[i][j]);
         chart_2_option.series.push(s2);
 
         chart_3_option.legend.data.push(`Battery ${i+1}`);
         const s3 = structuredClone(chart_3_series_temp);
         s3.name = `Battery ${i+1}`;
-        s3.data = zeros(n, 1).map((_, j) => P[i][j] - H[i][j]);
+        s3.data = P[i].map((_, j) => P[i][j] - H[i][j]);
         chart_3_option.series.push(s3);
     }
     chart_2.setOption(chart_2_option);

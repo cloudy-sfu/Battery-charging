@@ -159,7 +159,7 @@ end
 
 route("/api/browse_folders") do
     try
-        path = String(get(Genie.Requests.getpayload(), "path", ""))
+        path = string(params(:path, ""))
         if isempty(path) || path == "__HOME__"
             path = homedir()
         end
@@ -177,6 +177,7 @@ route("/api/browse_folders") do
                 isdir(joinpath(path, name)) && push!(dirs, name)
             end
         catch
+            # ignore permission errors
         end
         parent = dirname(path)
         parent_out = parent == path ? nothing : parent

@@ -161,9 +161,19 @@ julia get_data/south_australia.jl
 
 In the web page:
 
--   Config specification of the battery group
--   Select start and end time of electricity load time series (supply and demand) to preview the line plot
--   Export the dataset containing battery and load to the given file path
+1.   Config specification of the battery group. Save batteries if changed.
+
+![image-20260525172428856](./assets/image-20260525172428856.png)
+
+2.   Select start and end time of electricity load time series (supply and demand) to preview the line plot.
+
+![image-20260525172527059](./assets/image-20260525172527059.png)
+
+3.   Export the dataset containing battery and load to the given file path.
+
+![image-20260525181129899](./assets/image-20260525181129899.png)
+
+![image-20260525181208294](./assets/image-20260525181208294.png)
 
 ## Solve
 
@@ -178,3 +188,52 @@ julia solve.jl --input_path $dataset --output_path $solution
 julia visualization.jl --input_path $solution --output_path $report
 ```
 
+`solve.jl` has additional arguments:
+
+| Variable    | Data type | Required? | Description                                                  |
+| ----------- | --------- | --------- | ------------------------------------------------------------ |
+| `--timeout` | Float64   | No        | Maximum time for the solver to solve the optimization problem, in unit of seconds. |
+
+## Results
+
+After solving the model, an HTML report is saved at `$report`.
+
+The report includes the following tabs.
+
+### Summary
+
+Status and value of objective function and variables.
+
+![image-20260525181654254](./assets/image-20260525181654254.png)
+
+### Charging history
+
+Charging and discharging history of each battery. Read segment means discharging; green segment means charging; grey segment means neither charging nor discharging.
+
+The maximum value of Y-axis always the energy capacity of battery.
+
+The X-axis value means the end time of each slot. (The same across all time series plots.)
+
+![Battery 7](./assets/Battery%207.png)
+
+### Power history
+
+The power of inputting or outputting electricity of each battery.
+
+The positive part of Y-axis is output (discharging) power, and the negative part is input (charging) power.
+
+![echarts](./assets/echarts.png)
+
+### Served electricity
+
+The grey bar is the amount of electricity demand. The positive value means other supply resources cannot fulfill the demand of the electricity market; the negative value means redundant electricity is available in the electricity market and batteries owner can use these energy to charge batteries. The stacked bars of batteries are the amount of energy taken or served in each period. 
+
+The following table explains how to compare the height of bars.
+
+| Stacked height of battery bars \_\_\_\_\_\_ the height of grey bar. | Grey bar is positive.                                        | Grey bar is negative.                                        |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| equal to                                                     | All demand are served by the batteries group.                | All redundant energy in the market is used to charge batteries. |
+| is shorter than (absolute value in either direction)         | The batteries group cannot fulfill the electricity demand.   | Part of the redundant energy in the market is used to charge batteries, the other part is wasted. |
+| is longer than                                               | The batteries group over-serve electricity and the redundant electricity is wasted. | Infeasible.                                                  |
+
+![](./assets/served_electricity.png)

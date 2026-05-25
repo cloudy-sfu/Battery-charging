@@ -1,17 +1,3 @@
-#=
-solve_battery.jl
-
-Julia/HiGHS translation of the JavaScript jsLPSolver MILP defined in
-`ilp_battery.js`. Reads a JLD2 dataset (as produced by
-`get_data/south_australia.jl` or `get_data/test_south_australia_small.jl`)
-and writes the solver result to another JLD2 file.
-
-Usage:
-    julia --project=. solve_battery.jl \
-        --input_path get_data/datasets/south_australia_small.jld2 \
-        --output_path results/south_australia_small_solution.jld2
-=#
-
 using ArgParse
 using JLD2
 using DataFrames

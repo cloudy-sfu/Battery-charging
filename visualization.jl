@@ -1,19 +1,3 @@
-#=
-visualization.jl
-
-Loads a solver result produced by `solve.jl` (JLD2) and writes a
-self-contained HTML report that renders the same three ECharts charts as
-`index.html` / `visualization.js`:
-  1. Charging history per battery (remaining energy with colored phases)
-  2. Power history (charging negative / discharging positive) per battery
-  3. Served electricity (stacked bar of discharge vs. demand)
-
-Usage:
-    julia --project=. visualization.jl \
-        --input_path  results/south_australia_small_solution.jld2 \
-        --output_path results/south_australia_small_solution.html
-=#
-
 using ArgParse
 using JLD2
 using JSON

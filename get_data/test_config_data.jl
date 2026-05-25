@@ -20,7 +20,6 @@ using Random
 include(joinpath(pwd(), "web_service.jl"))
 
 const HTML_PATH  = joinpath(pwd(), "get_data", "config_data.html")
-const DB_PATH    = joinpath(pwd(), "get_data", "artificial_random.db")
 const EXPORT_DIR = joinpath(pwd(), "get_data", "datasets")
 
 isdir(EXPORT_DIR) || mkpath(EXPORT_DIR)
@@ -39,38 +38,12 @@ const PAGE_CONFIG = Dict(
 # ---------------------------------------------------------------------------
 # Data access
 # ---------------------------------------------------------------------------
-
-function open_db()
-    db = SQLite.DB(DB_PATH)
-    SQLite.DBInterface.execute(db, "CREATE TABLE IF NOT EXISTS batteries (capacity REAL, level REAL, c_power REAL, d_power REAL, efficiency REAL)")
-    return db
-end
-
 function load_batteries()::DataFrame
-    db = open_db()
-    DataFrame(SQLite.DBInterface.execute(
-        db, "SELECT capacity, level, c_power, d_power, efficiency FROM batteries"))
+    @warn "Loading batteries not implemented."
 end
 
 function save_batteries(rows::AbstractVector)
-    db = open_db()
-    SQLite.transaction(db) do
-        SQLite.DBInterface.execute(db, "DELETE FROM batteries")
-        stmt = SQLite.Stmt(db, """
-            INSERT INTO batteries
-                (capacity, level, c_power, d_power, efficiency)
-            VALUES (?, ?, ?, ?, ?)
-        """)
-        for r in rows
-            SQLite.DBInterface.execute(stmt, (
-                parse(Float64, string(r["capacity"])),
-                parse(Float64, string(r["level"])),
-                parse(Float64, string(r["c_power"])),
-                parse(Float64, string(r["d_power"])),
-                parse(Float64, string(r["efficiency"])),
-            ))
-        end
-    end
+    @warn "Saving batteries not implemented."
 end
 
 function fetch_supply_demand(start_time::AbstractString, end_time::AbstractString)
@@ -108,7 +81,16 @@ end
 
 route("/api/browse_folders") do
     try
-        path = String(get(Genie.Requests.getpayload(), "path", ""))
+        path = get(Genie.Router.params(), :path, "")
+        if isempty(path)
+            path = String(get(Genie.Requests.getpayload(), "path", ""))
+        end
+        if isempty(path)
+            path = String(get(Genie.Router.params(), "path", ""))
+        end
+        if isempty(path)
+            path = String(get(Genie.Requests.getpayload(), :path, ""))
+        end
         if isempty(path) || path == "__HOME__"
             path = homedir()
         end

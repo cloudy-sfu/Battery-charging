@@ -287,6 +287,7 @@
                             </button>
                         </div>
                         <div id="folderPickerError" class="text-danger small mb-2" style="display: none"></div>
+                        <p><i>Double click to enter the folder.</i></p>
                         <div id="folderList" class="list-group" style="max-height: 50vh; overflow-y: auto"></div>
                     </div>
                     <div class="modal-footer">
@@ -501,13 +502,15 @@
                 (data.dirs || []).forEach((d) => {
                     const div = document.createElement("button");
                     div.type = "button";
-                    div.className = "list-group-item list-group-item-action";
-                    div.textContent = d;
+                    div.className = "list-group-item list-group-item-action text-start";
+                    div.textContent = "📁 " + d;
                     div.addEventListener("dblclick", () => {
                         loadFolder(joinFolderPath(folderCurrentPath, d));
                     });
                     div.addEventListener("click", () => {
-                        list.querySelectorAll(".list-group-item").forEach((el) => el.classList.remove("active"));
+                        list.querySelectorAll(".list-group-item").forEach((el) =>
+                            el.classList.remove("active")
+                        );
                         div.classList.add("active");
                         folderSelectedName = d;
                     });
