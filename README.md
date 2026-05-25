@@ -7,10 +7,6 @@
 
 Create and activate a Julia environment.
 
->   [!note]
->
->   If in Windows operation system and have installed PowerShell 7, the user can create virtual environment by https://github.com/cloudy-sfu/Julia-venv
-
 ## Model definition
 
 This project formulates battery charging and discharging as a mixed-integer linear programming (MILP) problem. Given an electricity market with known demand and known generation from non-battery sources over a planning horizon, a group of batteries is scheduled to charge when the market is in over-supply and to discharge when the market is in shortage. Other generation (such as renewable power generation) sources first meet the demand directly; any surplus is routed to the over-supply grid, where batteries may charge from it. When generation falls short, batteries discharge into the shortage grid to help serve the remaining demand. The objective is to minimize the total unserved electricity demand across the horizon.
@@ -204,11 +200,11 @@ The report includes the following tabs.
 
 Status and value of objective function and variables.
 
-![image-20260525181654254](./assets/image-20260525181654254.png)
+![image-20260526101620397](./assets/image-20260526101620397.png)
 
 ### Charging history
 
-Charging and discharging history of each battery. Read segment means discharging; green segment means charging; grey segment means neither charging nor discharging.
+Charging and discharging history of each battery. Read segment means discharging; green segment means charging; gray segment means neither charging nor discharging.
 
 The maximum value of Y-axis always the energy capacity of battery.
 
@@ -226,14 +222,14 @@ The positive part of Y-axis is output (discharging) power, and the negative part
 
 ### Served electricity
 
-The grey bar is the amount of electricity demand. The positive value means other supply resources cannot fulfill the demand of the electricity market; the negative value means redundant electricity is available in the electricity market and batteries owner can use these energy to charge batteries. The stacked bars of batteries are the amount of energy taken or served in each period. 
+The gray bar is the amount of electricity demand. The positive value means other supply resources cannot fulfill the demand of the electricity market; the negative value means redundant electricity is available in the electricity market and batteries owner can use these energy to charge batteries. The stacked bars of batteries are the amount of energy taken or served in each period. 
 
 The following table explains how to compare the height of bars.
 
-| Stacked height of battery bars \_\_\_\_\_\_ the height of grey bar. | Grey bar is positive.                                        | Grey bar is negative.                                        |
-| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| equal to                                                     | All demand are served by the batteries group.                | All redundant energy in the market is used to charge batteries. |
-| is shorter than (absolute value in either direction)         | The batteries group cannot fulfill the electricity demand.   | Part of the redundant energy in the market is used to charge batteries, the other part is wasted. |
-| is longer than                                               | The batteries group over-serve electricity and the redundant electricity is wasted. | Infeasible.                                                  |
+| Stacked height of battery bars \_\_\_\_\_\_ the height (absolute value in either direction) of gray bar | Positive gray bar                             | Negative gray bar                              |
+| ------------------------------------------------------------ | --------------------------------------------- | ---------------------------------------------- |
+| equal to                                                     | All additional demand are served by batteries | All redundant supply are recycled by batteries |
+| is shorter than                                              | Outage                                        | Grid waste redundant energy                    |
+| is longer than                                               | Batteries waste redundant energy              | (Infeasible)                                   |
 
 ![](./assets/served_electricity.png)
