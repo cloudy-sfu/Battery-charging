@@ -71,15 +71,15 @@ function build_summary() {
 
     html += '<h6>Battery parameters</h6>';
     html += '<div class="mb-3"><table class="sol-table"><thead><tr>';
-    html += '<th>i</th><th>capacity</th></tr></thead><tbody>';
+    html += '<th>i</th><th>capacity</th><th>max input power</th><th>max output power</th><th>efficiency</th></tr></thead><tbody>';
     for (let i = 0; i < m; i++) {
-        html += `<tr><td>${i+1}</td><td>${fmt(energy_capacity[i])}</td></tr>`;
+        html += `<tr><td>${i+1}</td><td>${fmt(energy_capacity[i])}</td><td>${fmt(SOLUTION.max_input_power[i])}</td><td>${fmt(SOLUTION.max_output_power[i])}</td><td>${fmt(SOLUTION.efficiency[i])}</td></tr>`;
     }
     html += '</tbody></table></div>';
 
     const headCells = ['j'];
     if (hasTime) headCells.push('end_time');
-    headCells.push('demand', 't (slack)');
+    headCells.push('demand', 't');
     for (let i = 0; i < m; i++) {
         headCells.push(`A[${i+1}]`, `P[${i+1}]`, `H[${i+1}]`,
                        `Sc[${i+1}]`, `Sd[${i+1}]`);

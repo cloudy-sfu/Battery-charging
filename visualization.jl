@@ -27,6 +27,9 @@ batteries, A, P, H, Sc, Sd, t_slack, D, end_time, status_str, primal_str, obj =
     end
 
 energy_capacity = Float64.(batteries.capacity)
+max_input_power = Float64.(batteries.c_power)
+max_output_power = Float64.(batteries.d_power)
+efficiency = Float64.(batteries.efficiency)
 m = size(A, 1)
 n = size(A, 2) - 1
 
@@ -49,6 +52,9 @@ payload = Dict(
     "demand" => collect(D),
     "end_time" => string.(end_time),
     "energy_capacity" => energy_capacity,
+    "max_input_power" => max_input_power,
+    "max_output_power" => max_output_power,
+    "efficiency" => efficiency,
     "status" => status_str,
     "primal_status" => primal_str,
     "objective" => isfinite(obj) ? obj : nothing,

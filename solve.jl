@@ -38,49 +38,48 @@ demand_col = Float64.(load[!, 2])
 supply_sum = ncol(load) >= 3 ?
     sum(Float64.(load[!, j]) for j in 3:ncol(load)) :
     zeros(Float64, nrow(load))
-D = demand_col .- supply_sum
 end_time = collect(load[!, 1])
+m = nrow(batteries)  # number of batteries
+n = nrow(load)  # number of time slots
 
-# Infer sampling step (hours) from end_time. Require a unique spacing.
+# Infer sampling step (hours) from end_time. Require uniform sampling.
 diffs = unique(diff(end_time))
 length(diffs) == 1 || error("Non-uniform sampling in load[:,1]: found $(length(diffs)) distinct steps: $diffs")
 Δt = isa(diffs[1], Period) ? Dates.value(Second(diffs[1])) / 3_600 : float(diffs[1])
-Δt > 0 || error("Non-positive sampling step inferred from end_time: $Δt")
-println("Loaded dataset: $(nrow(batteries)) batteries, $(length(D)) time slots, Δt = $Δt h.")
+Δt > 0 || error("Non-positive sampling step inferred from end_time: $Δt h")
+println("Loaded dataset: $m batteries, $n time slots, Δt = $Δt h.")
 
-# %% Battery parameters
-C  = Float64.(batteries.capacity)
-L  = Float64.(batteries.level)      # fractional initial level (0~1)
-Ip = Float64.(batteries.c_power)
-Op = Float64.(batteries.d_power)
-E  = Float64.(batteries.efficiency)
-A0 = L .* C
-m = length(C)
-n = length(D)
+# %% Constants
+D = demand_col .- supply_sum  # net demand power (size: n)
+C = Float64.(batteries.capacity)  # batteries' energy capacity (size: m)
+L = Float64.(batteries.level)  # initial level of batteries (size: m)
+I = Float64.(batteries.c_power)  # maximum input power of batteries (size: m)
+O = Float64.(batteries.d_power)  # maximum output power of batteries (size: m)
+E = Float64.(batteries.efficiency)  # charging efficiency (size: m)
 
 # %% Build MILP
 model = Model(HiGHS.Optimizer)
 timeout > 0 && set_time_limit_sec(model, timeout)
 
-@variable(model, t[1:n] >= 0)
-@variable(model, P[1:m, 1:n] >= 0)
-@variable(model, H[1:m, 1:n] >= 0)
-@variable(model, A[1:m, 1:n+1] >= 0)
-@variable(model, Sc[1:m, 1:n], Bin)
-@variable(model, Sd[1:m, 1:n], Bin)
+@variable(model, t[1:n] >= 0)  # t_j: power of outage load
+@variable(model, P[1:m, 1:n] >= 0)  # P_ij: power of discharging
+@variable(model, H[1:m, 1:n] >= 0)  # H_ij: power of charging
+@variable(model, A[1:m, 1:n+1] >= 0)    # A_ij (j>0): remained energy in the battery
+@variable(model, Sc[1:m, 1:n], Bin)  # Sc_ij: charging status
+@variable(model, Sd[1:m, 1:n], Bin)  # Sd_ij: discharging status
 
-@objective(model, Min, sum(t))
+@objective(model, Min, sum(t) * Δt)  # objective function: penalize outage t_j
 
-@constraint(model, [i = 1:m], A[i, 1] == A0[i])
-@constraint(model, [j = 1:n], D[j] - sum(P[i, j] for i in 1:m) <= t[j])
+@constraint(model, [i = 1:m], A[i, 1] == L[i] * C[i])  # initial of energy balance
+@constraint(model, [j = 1:n], D[j] - sum(P[i, j] for i in 1:m) <= t[j])  # outage
 @constraint(model, [i = 1:m, j = 1:n],
-    A[i, j] + (E[i] * H[i, j] - P[i, j]) * Δt == A[i, j + 1])
-@constraint(model, [i = 1:m, j = 1:n], H[i, j] <= Ip[i] * Sc[i, j])
-@constraint(model, [i = 1:m, j = 1:n], P[i, j] <= Op[i] * Sd[i, j])
-@constraint(model, [i = 1:m, j = 1:n], Sc[i, j] + Sd[i, j] <= 1)
-@constraint(model, [i = 1:m, j = 1:n], A[i, j] <= C[i])
-@constraint(model, [i = 1:m, j = 1:n], P[i, j] * Δt <= A[i, j])
-@constraint(model, [j = 1:n], sum(H[i, j] for i in 1:m) <= max(0.0, -D[j]))
+    A[i, j] + (E[i] * H[i, j] - P[i, j]) * Δt == A[i, j + 1])  # energy balance
+@constraint(model, [i = 1:m, j = 1:n], H[i, j] <= I[i] * Sc[i, j])  # charging status
+@constraint(model, [i = 1:m, j = 1:n], P[i, j] <= O[i] * Sd[i, j])  # discharge status
+@constraint(model, [i = 1:m, j = 1:n], Sc[i, j] + Sd[i, j] <= 1)  # cannot charge and discharge at the same slot
+@constraint(model, [i = 1:m, j = 1:n], A[i, j] <= C[i])  # charging max capacity
+@constraint(model, [i = 1:m, j = 1:n], P[i, j] * Δt <= A[i, j])  # discharging max capacity
+@constraint(model, [j = 1:n], sum(H[i, j] for i in 1:m) <= max(0.0, -D[j]))  # charging availability
 
 # %% Solve
 optimize!(model)
