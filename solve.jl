@@ -84,7 +84,8 @@ timeout > 0 && set_time_limit_sec(model, timeout)
 # %% Solve
 optimize!(model)
 status = termination_status(model)
-has_vals = primal_status(model) == MOI.FEASIBLE_POINT
+primal_status = primal_status(model)
+has_vals = primal_status == MOI.FEASIBLE_POINT
 println("Status: ", status,
         " | objective: ", has_vals ? objective_value(model) : NaN)
 
@@ -93,16 +94,16 @@ outdir = dirname(output_path)
 isempty(outdir) || isdir(outdir) || mkpath(outdir)
 jldopen(output_path, "w") do file
     file["termination_status"] = string(status)
-    file["primal_status"]      = string(primal_status(model))
+    file["primal_status"]      = string(primal_status)
     file["objective"]          = has_vals ? objective_value(model) : NaN
     file["batteries"]          = batteries
     file["end_time"]           = end_time
     file["demand"]             = D
-    file["A"]  = has_vals ? value.(A)  : zeros(m, n + 1)
-    file["P"]  = has_vals ? value.(P)  : zeros(m, n)
-    file["H"]  = has_vals ? value.(H)  : zeros(m, n)
-    file["Sc"] = has_vals ? value.(Sc) : zeros(m, n)
-    file["Sd"] = has_vals ? value.(Sd) : zeros(m, n)
-    file["t"]  = has_vals ? value.(t)  : zeros(n)
+    file["A"]  = has_vals ? value.(A)  : fill(NaN, m, n + 1)
+    file["P"]  = has_vals ? value.(P)  : fill(NaN, m, n)
+    file["H"]  = has_vals ? value.(H)  : fill(NaN, m, n)
+    file["Sc"] = has_vals ? value.(Sc) : fill(NaN, m, n)
+    file["Sd"] = has_vals ? value.(Sd) : fill(NaN, m, n)
+    file["t"]  = has_vals ? value.(t)  : fill(NaN, n)
 end
 println("Saved solution to $output_path")
