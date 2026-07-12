@@ -8,7 +8,7 @@ using SQLite
 include(joinpath(pwd(), "sqlite_insertion.jl"))
 using .SQLiteInsertion
 
-const DB_PATH = joinpath(pwd(), "get_data", "south_australia.db")
+const DB_PATH = joinpath(pwd(), "aemo", "south_australia.db")
 db = SQLite.DB(DB_PATH)
 SQLite.execute(db, """
     CREATE TABLE IF NOT EXISTS du_detail_summary (

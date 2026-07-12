@@ -2,8 +2,8 @@ using SQLite
 using DataFrames
 using Dates
 
-const DB_PATH = joinpath(pwd(), "get_data", "south_australia.db")
-const SQL_DIR = joinpath(pwd(), "get_data", "sqls_south_australia")
+const DB_PATH = joinpath(pwd(), "aemo", "south_australia.db")
+const SQL_DIR = joinpath(pwd(), "aemo", "sqls_south_australia")
 
 const CHECKS = [
     ("dispatched_scada_completion.sql", Minute(5), "fetch_aemo_dispatched_scada"),

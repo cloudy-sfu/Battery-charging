@@ -10,9 +10,9 @@ include(joinpath(pwd(), "sqlite_insertion.jl"))
 using .SQLiteInsertion
 
 const DOMAIN      = "https://nemweb.com.au"
-const ARCHIVE_URL = DOMAIN * "/Reports/ARCHIVE/Next_Day_Actual_Gen/"
-const CURRENT_URL = DOMAIN * "/Reports/CURRENT/Next_Day_Actual_Gen/"
-const DB_PATH = joinpath(pwd(), "get_data", "south_australia.db")
+const ARCHIVE_URL = DOMAIN * "/Reports/ARCHIVE/HistDemand/"
+const CURRENT_URL = DOMAIN * "/Reports/CURRENT/HistDemand/"
+const DB_PATH = joinpath(pwd(), "aemo", "south_australia.db")
 
 # HTML directory listing
 function list_links(url::AbstractString)
@@ -58,14 +58,17 @@ function parse_csv_bytes(bytes::Vector{UInt8}, source::AbstractString)
     df = CSV.read(seekstart(buf), DataFrame; types=String, header=false)
 
     # AEMO HISTDEMAND columns (positional, since header has a duplicate "DEMAND"):
-    # D,METER_DATA,GEN_DUID,1,INTERVAL_DATETIME,DUID,MWH_READING,LASTCHANGED
+    #   1=record type, 2="DEMAND", 3="HISTORIC", 4=version,
+    #   5=REGIONID, 6=SETTLEMENTDATE, 7=PERIODID, 8=DEMAND (numeric)
+    dates   = Date.(df[!, 6], dateformat"yyyy/mm/dd HH:MM:SS")
+    periods = parse.(Int, df[!, 7])
     @info "CSV file of $source is processed."
 
     return DataFrame(
-        duid = df[!, 6],
-        end_time = Dates.format.(DateTime.(df[!, 5], dateformat"yyyy/mm/dd HH:MM:SS"),
-                                 dateformat"yyyy-mm-dd HH:MM:SS"),
-        energy = parse.(Float64, df[!, 7]),
+        region_id = df[!, 5],
+        end_time = Dates.format.(DateTime.(dates) .+ Minute.(periods .* 30),
+                                  dateformat"yyyy-mm-dd HH:MM:SS"),
+        load      = parse.(Int, df[!, 8]),
     )
 end
 
@@ -100,15 +103,14 @@ end
 # Init DB
 db = SQLite.DB(DB_PATH)
 SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS next_day_gen (
-        duid TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS historical_demand (
+        region_id TEXT NOT NULL,
         end_time  TEXT NOT NULL,
-        energy    REAL NOT NULL,
-        PRIMARY KEY (duid, end_time)
+        load      INTEGER NOT NULL,
+        PRIMARY KEY (region_id, end_time)
     )
 """)
-SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_next_day_gen_duid_endtime ON next_day_gen(duid, end_time)")
-SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_next_day_gen_endtime ON next_day_gen(end_time)")
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_historical_demand_region_endtime ON historical_demand(region_id, end_time)")
 for href in list_links(ARCHIVE_URL)
     url = DOMAIN * href
     try

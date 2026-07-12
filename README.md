@@ -117,63 +117,115 @@ $$
 \sum_{i = 1}^{m}H_{ij} \leq \max\left( 0, -D_{j} \right), \quad \forall j = 1, ..., n
 $$
 
-## Prepare data
+## Get data
 
-### South Australia AEMO Generation
+### Format
+
+The command above is only a convenience wrapper around AEMO's South Australian data. The solver does not depend on AEMO at all: it simply reads a [JLD2](https://github.com/JuliaIO/JLD2.jl) file. If you have your own market data, you can skip the scripts under `aemo/` and write the `.jld2` file directly.
+
+A dataset file stores the following keys (variables).
+
+| Key          | Julia type  | Required? | Description                                                                        |
+| ------------ | ----------- | --------- | ---------------------------------------------------------------------------------- |
+| `batteries`  | `DataFrame` | Yes       | One row per battery. See the column layout below.                                  |
+| `load`       | `DataFrame` | Yes       | One row per time slot. Column 1 is the slot end time; column 2 is demand; columns 3+ are non-battery supplies. See below. |
+| `region`     | `String`    | No        | Free-form label for the market/region. Metadata only.                              |
+| `start_time` | `String`    | No        | Series start, for reference. Metadata only.                                        |
+| `end_time`   | `String`    | No        | Series end, for reference. Metadata only.                                          |
+
+Only `batteries` and `load` are read by `solve.jl`; the remaining keys are metadata and may be omitted.
+
+Data frame `batteries` has one row per battery ($m$ rows) with these columns (matching the model parameters above):
+
+| Column       | Julia type | Unit           | Model symbol | Description                                                      |
+| ------------ | ---------- | -------------- | ------------ | ---------------------------------------------------------------- |
+| `capacity`   | `Float64`  | MWh            | $C_i$        | Energy capacity, `> 0`.                                          |
+| `level`      | `Float64`  | fraction `0..1`| —            | Initial state of charge; the initial energy is `level * capacity`. |
+| `c_power`    | `Float64`  | MW             | $I_i$        | Maximum charging power, `> 0`.                                   |
+| `d_power`    | `Float64`  | MW             | $O_i$        | Maximum discharging power, `> 0`.                                |
+| `efficiency` | `Float64`  | fraction `0..1`| $E_i$        | Charging efficiency.                                            |
+
+Data frame `load` has one row per time slot ($n$ rows). Column order matters; column names are free-form and are not hard-coded:
+
+| Position                 | Julia type | Description                                                  |
+| ------------------------ | ---------- | ------------------------------------------------------------ |
+| Column 1                 | `DateTime` | End time of each slot. Sampling must be uniform (a constant step between consecutive rows). |
+| Column 2                 | `Float64`  | Electricity demand power in the slot.                        |
+| Columns 3 and subsequent | `Float64`  | Non-battery supply power (one column per source). Optional; use zero columns for none. |
+
+The net demand the batteries must serve is `demand - sum(supplies)`, i.e. $D_j$ in the model. The solver infers the slot duration $\Delta t$ (in hours) from the spacing of column 1, so make sure the time steps are uniform.
+
+A minimal example that builds a dataset from your own arrays:
+
+```julia
+using DataFrames, Dates, JLD2
+
+batteries = DataFrame(
+    capacity   = [194.0, 250.0],
+    level      = [0.5, 0.5],
+    c_power    = [150.0, 250.0],
+    d_power    = [150.0, 250.0],
+    efficiency = [0.88, 0.87],
+)
+
+start = DateTime(2026, 1, 1, 0, 0, 0)
+load = DataFrame(
+    end_time = collect(start:Minute(30):start + Minute(30) * 47),  # 48 half-hourly slots
+    demand   = rand(48) .* 1000,   # column 2: demand [MW]
+    wind     = rand(48) .* 400,    # column 3+: supplies [MW]
+    solar    = rand(48) .* 300,
+)
+
+jldopen("my_dataset.jld2", "w") do file
+    file["batteries"] = batteries
+    file["load"]      = load
+end
+```
+
+### Source: AEMO
 
 The Australian Energy Market Operator (AEMO) runs the National Electricity Market (NEM), which links the eastern and southern states of Australia through a shared high-voltage transmission grid. AEMO dispatches generators every 5 minutes to match demand at the lowest offered price, and publishes the resulting data, e.g. regional demand, per-unit SCADA generation, and next-day actual generation (non-scheduled dispatchable units).
 
 South Australia is a useful slice of this data, because the region has a high share of wind and rooftop solar, a small number of large grid-scale batteries (such as the Honesdale Power Reserve, Torrens Island BESS, and Lake Bonney BESS), and a handful of gas-fired stations as backup. Each battery appears in AEMO data as one or more dispatchable units (DUIDs) with registered charge or discharge capacity and a storage size in MWh, which map directly onto the model parameters $C_i$, $I_i$, and $O_i$ above. Regional demand minus non-battery generation gives the $D_j$ series this project optimizes against.
 
-The scripts under `get_data/` fetch these feeds and load them into a local SQLite database, so the MILP can be solved on a realistic, recent slice of the South Australian grid.
+The scripts under `aemo/` fetch these feeds and load them into a local SQLite database, so the MILP can be solved on a realistic, recent slice of the South Australian grid.
 
 To collect the data, run the following command in terminal.
 
 ```
-julia get_data/init_sa_battery.jl
-julia get_data/fetch_aemo_dispatched_scada.jl
-julia get_data/fetch_aemo_du_detail_summary.jl
-julia get_data/fetch_aemo_hist_demand.jl
-julia get_data/fetch_aemo_next_day_gen.jl
+julia aemo/fetch_aemo_dispatched_scada.jl
+julia aemo/fetch_aemo_du_detail_summary.jl
+julia aemo/fetch_aemo_hist_demand.jl
+julia aemo/fetch_aemo_next_day_gen.jl
 ```
 
 Check the data integrity by run the following command in terminal.
 
 ```
-julia get_data/south_australia_check_integrity.jl
+julia aemo/south_australia_check_integrity.jl
 ```
 
 The terminal will output whether the data has missing value and what is the missed time range. Rerun the corresponding script or manually input data into the database to fill missing data. The data integrity check doesn't have a compulsory passing condition, because the program will fill missing values by statistical methods, instead of breaking down.
 
 >   [!note]
 >
->   At the moment, re-running `fetch_aemo_dispatched_scada.jl` will check existed data in database and fetch new data incrementally. Other scripts can only fetch all the data and update the whole table.
+>   At the moment, re-running `aemo/fetch_aemo_dispatched_scada.jl` will check existed data in database and fetch new data incrementally. Other scripts can only fetch all the data and update the whole table.
 
-To create a dataset, run the following command in terminal.
+To create a dataset, run the following command with arguments. It reads batteries from `aemo/batteries.txt` and electricity load from `aemo/south_australia.db`.
 
-```
-julia get_data/south_australia.jl
-```
+| Variable        | Data type | Required? | Description                                                  |
+| --------------- | --------- | --------- | ------------------------------------------------------------ |
+| `--start_time`  | String    | Yes       | Series start (exclusive), UTC `YYYY-MM-DD HH:MM:SS`.         |
+| `--end_time`    | String    | Yes       | Series end (inclusive), UTC `YYYY-MM-DD HH:MM:SS`.           |
+| `--output_path` | String    | Yes       | Path to write the dataset (`.jld2`).                         |
+| `--region`      | String    | Yes       | NEM region id (e.g. South Australia `SA1`).                  |
+| `--db_path`     | String    | No        | Path to the SQLite database. Defaults to `aemo/south_australia.db`. |
 
-In the web page:
-
-1.   Config specification of the battery group. Save batteries if changed.
-
-![image-20260525172428856](./assets/image-20260525172428856.png)
-
-2.   Select start and end time of electricity load time series (supply and demand) to preview the line plot.
-
-![image-20260525172527059](./assets/image-20260525172527059.png)
-
-3.   Export the dataset containing battery and load to the given file path.
-
-![image-20260525181129899](./assets/image-20260525181129899.png)
-
-![image-20260525181208294](./assets/image-20260525181208294.png)
+### 
 
 ## Solve
 
-Let the saved dataset file path is `$dataset`.
+Let the saved dataset file path be `$dataset`.
 
 Assume the file path to save the solution in format of JLD2 is `$solution`; the file path to save the visualization report in format of HTML is `$report` (all can be customized).
 

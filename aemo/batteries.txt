@@ -1,0 +1,29 @@
+# One battery per data row, whitespace-separated. Blank lines and anything from
+# a '#' to the end of a line are ignored, so comments may sit on their own rows
+# or trail a data row.
+
+# Columns (in order):
+#   capacity    energy capacity                  [MWh]           > 0
+#   level       initial state of charge          [fraction 0..1]
+#   c_power     maximum charging power           [MW]            > 0
+#   d_power     maximum discharging power        [MW]            > 0
+#   efficiency  round-trip charging efficiency   [fraction 0..1]
+#
+# capacity  level  c_power  d_power  efficiency
+# ----------------------------------------------------------------------------
+
+# Sources: AEMO Generation Information, operator press releases.
+# Hornsdale Power Reserve (Neoen / Tesla), Jamestown SA
+  194.0     0.5    150.0    150.0    0.88
+# Torrens Island BESS (AGL), Adelaide
+  250.0     0.5    250.0    250.0    0.87
+# Dalrymple / ESCRI BESS (AGL / ElectraNet), Yorke Peninsula
+    8.0     0.5     30.0     30.0    0.85
+# Lake Bonney BESS (Infigen / Iberdrola), south-east SA
+   52.0     0.5     25.0     25.0    0.86
+# Tailem Bend BESS (Vena Energy), co-located with Tailem Bend Solar
+    5.0     0.5      5.0      5.0    0.85
+# Bungama BESS (AGL), Port Pirie -- commissioning
+  500.0     0.5    250.0    250.0    0.87
+# Blyth Battery (Neoen), Mid North SA -- under construction
+  800.0     0.5    200.0    200.0    0.88

@@ -10,10 +10,9 @@ include(joinpath(pwd(), "sqlite_insertion.jl"))
 using .SQLiteInsertion
 
 const DOMAIN      = "https://nemweb.com.au"
-const ARCHIVE_URL = DOMAIN * "/Reports/ARCHIVE/Dispatch_SCADA/" 
-# https://nemweb.com.au/Reports/CURRENT/Dispatch_SCADA/
-const CURRENT_URL = DOMAIN * "/Reports/CURRENT/Dispatch_SCADA/"
-const DB_PATH = joinpath(pwd(), "get_data", "south_australia.db")
+const ARCHIVE_URL = DOMAIN * "/Reports/ARCHIVE/Next_Day_Actual_Gen/"
+const CURRENT_URL = DOMAIN * "/Reports/CURRENT/Next_Day_Actual_Gen/"
+const DB_PATH = joinpath(pwd(), "aemo", "south_australia.db")
 
 # HTML directory listing
 function list_links(url::AbstractString)
@@ -66,7 +65,7 @@ function parse_csv_bytes(bytes::Vector{UInt8}, source::AbstractString)
         duid = df[!, 6],
         end_time = Dates.format.(DateTime.(df[!, 5], dateformat"yyyy/mm/dd HH:MM:SS"),
                                  dateformat"yyyy-mm-dd HH:MM:SS"),
-        load = parse.(Float64, df[!, 7]),
+        energy = parse.(Float64, df[!, 7]),
     )
 end
 
@@ -101,62 +100,32 @@ end
 # Init DB
 db = SQLite.DB(DB_PATH)
 SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS dispatched_scada (
+    CREATE TABLE IF NOT EXISTS next_day_gen (
         duid TEXT NOT NULL,
         end_time  TEXT NOT NULL,
-        load      REAL NOT NULL,
+        energy    REAL NOT NULL,
         PRIMARY KEY (duid, end_time)
     )
 """)
-SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dispatched_scada_duid_endtime ON dispatched_scada(duid, end_time)")
-SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dispatched_scada_endtime ON dispatched_scada(end_time)")
-const COMPLETED_DATES_SQL = read(joinpath(
-    pwd(), "get_data", "sqls_south_australia", "get_dispatched_scada_completed_date.sql"), 
-    String)
-completed_dates = Set(
-    DBInterface.execute(db, COMPLETED_DATES_SQL) |> DataFrame |> df -> df.date_)
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_next_day_gen_duid_endtime ON next_day_gen(duid, end_time)")
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_next_day_gen_endtime ON next_day_gen(end_time)")
 for href in list_links(ARCHIVE_URL)
-    match_ = match(r"PUBLIC_DISPATCHSCADA_(\d+)", href)
-    if (match_ !== nothing)
-        date_1 = Date(match_.captures[1], dateformat"yyyymmdd")
-        date_2 = Dates.format(date_1, dateformat"yyyy-mm-dd")
-        if (date_2 in completed_dates)
-            continue
-        end
-        url = DOMAIN * href
-        try
-            resp = HTTP.get(url; readtimeout=2000, retries=3)
-            process_archive_zip_bytes!(db, Vector{UInt8}(resp.body))
-        catch e
-            @warn "Cannot parse $url Reason: $e"
-        end
-        sleep(0.3)
-    else
-        @warn "ZIP file URL $href is invalid."
+    url = DOMAIN * href
+    try
+        resp = HTTP.get(url; readtimeout=2000, retries=3)
+        process_archive_zip_bytes!(db, Vector{UInt8}(resp.body))
+    catch e
+        @warn "Cannot parse $url Reason: $e"
     end
+    sleep(0.3)
 end
-const COMPLETED_DATES_RECENT_SQL = read(joinpath(
-    pwd(), "get_data", "sqls_south_australia", "get_dispatched_scada_completed_date_recent.sql"), 
-    String)
-completed_datetime = Set(
-    DBInterface.execute(db, COMPLETED_DATES_RECENT_SQL) |> DataFrame |> df -> df.end_time)
 for href in list_links(CURRENT_URL)
-    match_ = match(r"PUBLIC_DISPATCHSCADA_(\d+)", href)
-    if (match_ !== nothing)
-        date_1 = DateTime(match_.captures[1], dateformat"yyyymmddHHMM")
-        date_2 = Dates.format(date_1, dateformat"yyyy-mm-dd HH:MM:SS")
-        if (date_2 in completed_datetime)
-            continue
-        end
-        url = DOMAIN * href
-        try
-            resp = HTTP.get(url; readtimeout=2000, retries=3)
-            process_zip_bytes!(db, Vector{UInt8}(resp.body))
-        catch e
-            @warn "Cannot parse $url Reason: $e"
-        end
-        sleep(0.3)
-    else
-        @warn "ZIP file URL $href is invalid."
+    url = DOMAIN * href
+    try
+        resp = HTTP.get(url; readtimeout=2000, retries=3)
+        process_zip_bytes!(db, Vector{UInt8}(resp.body))
+    catch e
+        @warn "Cannot parse $url Reason: $e"
     end
+    sleep(0.3)
 end

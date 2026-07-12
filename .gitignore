@@ -34,8 +34,8 @@ debug.ps1
 pluto.ps1
 
 .vscode
-get_data/*.db
-get_data/*.db-journal
-get_data/.idea
-get_data/datasets/
+aemo/*.db
+aemo/*.db-journal
+aemo/.idea
+datasets/
 results/

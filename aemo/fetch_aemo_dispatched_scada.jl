@@ -10,9 +10,10 @@ include(joinpath(pwd(), "sqlite_insertion.jl"))
 using .SQLiteInsertion
 
 const DOMAIN      = "https://nemweb.com.au"
-const ARCHIVE_URL = DOMAIN * "/Reports/ARCHIVE/HistDemand/"
-const CURRENT_URL = DOMAIN * "/Reports/CURRENT/HistDemand/"
-const DB_PATH = joinpath(pwd(), "get_data", "south_australia.db")
+const ARCHIVE_URL = DOMAIN * "/Reports/ARCHIVE/Dispatch_SCADA/" 
+# https://nemweb.com.au/Reports/CURRENT/Dispatch_SCADA/
+const CURRENT_URL = DOMAIN * "/Reports/CURRENT/Dispatch_SCADA/"
+const DB_PATH = joinpath(pwd(), "aemo", "south_australia.db")
 
 # HTML directory listing
 function list_links(url::AbstractString)
@@ -58,17 +59,14 @@ function parse_csv_bytes(bytes::Vector{UInt8}, source::AbstractString)
     df = CSV.read(seekstart(buf), DataFrame; types=String, header=false)
 
     # AEMO HISTDEMAND columns (positional, since header has a duplicate "DEMAND"):
-    #   1=record type, 2="DEMAND", 3="HISTORIC", 4=version,
-    #   5=REGIONID, 6=SETTLEMENTDATE, 7=PERIODID, 8=DEMAND (numeric)
-    dates   = Date.(df[!, 6], dateformat"yyyy/mm/dd HH:MM:SS")
-    periods = parse.(Int, df[!, 7])
+    # D,METER_DATA,GEN_DUID,1,INTERVAL_DATETIME,DUID,MWH_READING,LASTCHANGED
     @info "CSV file of $source is processed."
 
     return DataFrame(
-        region_id = df[!, 5],
-        end_time = Dates.format.(DateTime.(dates) .+ Minute.(periods .* 30),
-                                  dateformat"yyyy-mm-dd HH:MM:SS"),
-        load      = parse.(Int, df[!, 8]),
+        duid = df[!, 6],
+        end_time = Dates.format.(DateTime.(df[!, 5], dateformat"yyyy/mm/dd HH:MM:SS"),
+                                 dateformat"yyyy-mm-dd HH:MM:SS"),
+        load = parse.(Float64, df[!, 7]),
     )
 end
 
@@ -103,31 +101,62 @@ end
 # Init DB
 db = SQLite.DB(DB_PATH)
 SQLite.execute(db, """
-    CREATE TABLE IF NOT EXISTS historical_demand (
-        region_id TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS dispatched_scada (
+        duid TEXT NOT NULL,
         end_time  TEXT NOT NULL,
-        load      INTEGER NOT NULL,
-        PRIMARY KEY (region_id, end_time)
+        load      REAL NOT NULL,
+        PRIMARY KEY (duid, end_time)
     )
 """)
-SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_historical_demand_region_endtime ON historical_demand(region_id, end_time)")
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dispatched_scada_duid_endtime ON dispatched_scada(duid, end_time)")
+SQLite.execute(db, "CREATE INDEX IF NOT EXISTS idx_dispatched_scada_endtime ON dispatched_scada(end_time)")
+const COMPLETED_DATES_SQL = read(joinpath(
+    pwd(), "aemo", "sqls_south_australia", "get_dispatched_scada_completed_date.sql"), 
+    String)
+completed_dates = Set(
+    DBInterface.execute(db, COMPLETED_DATES_SQL) |> DataFrame |> df -> df.date_)
 for href in list_links(ARCHIVE_URL)
-    url = DOMAIN * href
-    try
-        resp = HTTP.get(url; readtimeout=2000, retries=3)
-        process_archive_zip_bytes!(db, Vector{UInt8}(resp.body))
-    catch e
-        @warn "Cannot parse $url Reason: $e"
+    match_ = match(r"PUBLIC_DISPATCHSCADA_(\d+)", href)
+    if (match_ !== nothing)
+        date_1 = Date(match_.captures[1], dateformat"yyyymmdd")
+        date_2 = Dates.format(date_1, dateformat"yyyy-mm-dd")
+        if (date_2 in completed_dates)
+            continue
+        end
+        url = DOMAIN * href
+        try
+            resp = HTTP.get(url; readtimeout=2000, retries=3)
+            process_archive_zip_bytes!(db, Vector{UInt8}(resp.body))
+        catch e
+            @warn "Cannot parse $url Reason: $e"
+        end
+        sleep(0.3)
+    else
+        @warn "ZIP file URL $href is invalid."
     end
-    sleep(0.3)
 end
+const COMPLETED_DATES_RECENT_SQL = read(joinpath(
+    pwd(), "aemo", "sqls_south_australia", "get_dispatched_scada_completed_date_recent.sql"), 
+    String)
+completed_datetime = Set(
+    DBInterface.execute(db, COMPLETED_DATES_RECENT_SQL) |> DataFrame |> df -> df.end_time)
 for href in list_links(CURRENT_URL)
-    url = DOMAIN * href
-    try
-        resp = HTTP.get(url; readtimeout=2000, retries=3)
-        process_zip_bytes!(db, Vector{UInt8}(resp.body))
-    catch e
-        @warn "Cannot parse $url Reason: $e"
+    match_ = match(r"PUBLIC_DISPATCHSCADA_(\d+)", href)
+    if (match_ !== nothing)
+        date_1 = DateTime(match_.captures[1], dateformat"yyyymmddHHMM")
+        date_2 = Dates.format(date_1, dateformat"yyyy-mm-dd HH:MM:SS")
+        if (date_2 in completed_datetime)
+            continue
+        end
+        url = DOMAIN * href
+        try
+            resp = HTTP.get(url; readtimeout=2000, retries=3)
+            process_zip_bytes!(db, Vector{UInt8}(resp.body))
+        catch e
+            @warn "Cannot parse $url Reason: $e"
+        end
+        sleep(0.3)
+    else
+        @warn "ZIP file URL $href is invalid."
     end
-    sleep(0.3)
 end
