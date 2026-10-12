@@ -211,7 +211,13 @@ The terminal will output whether the data has missing value and what is the miss
 >
 >   At the moment, re-running `aemo/fetch_aemo_dispatched_scada.jl` will check existed data in database and fetch new data incrementally. Other scripts can only fetch all the data and update the whole table.
 
-To create a dataset, run the following command with arguments. It reads batteries from `aemo/batteries.txt` and electricity load from `aemo/south_australia.db`.
+To create a dataset, run the following command with arguments.
+
+```
+julia aemo/create_dataset.jl
+```
+
+Arguments:
 
 | Variable        | Data type | Required? | Description                                                  |
 | --------------- | --------- | --------- | ------------------------------------------------------------ |
@@ -220,6 +226,8 @@ To create a dataset, run the following command with arguments. It reads batterie
 | `--output_path` | String    | Yes       | Path to write the dataset (`.jld2`).                         |
 | `--region`      | String    | Yes       | NEM region id (e.g. South Australia `SA1`).                  |
 | `--db_path`     | String    | No        | Path to the SQLite database. Defaults to `aemo/south_australia.db`. |
+
+It reads batteries from `aemo/batteries.txt` and electricity load from `aemo/south_australia.db`.
 
 ### 
 
